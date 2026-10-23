@@ -1,0 +1,21 @@
+# Local configuration and user state
+*.json
+!package.json
+!package-lock.json
+!*.example.json
+!web/model-settings.example.json
+*.log
+*.pid
+*.request
+*.done
+__pycache__/
+.venv/
+.webview2/
+assistant_logs/
+vendor/
+node_modules/
+web/model/
+web/lib/*.js
+web/lib/*LICENSE*
+web/*.ico
+web/*.png

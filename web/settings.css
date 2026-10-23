@@ -1,0 +1,906 @@
+/* 浅色薄荷主题 · 设置面板
+   只做视觉样式：保留全部原有选择器、DOM 结构与设置逻辑。 */
+
+:root {
+  color-scheme: light;
+  --bg: #f3f8f6;
+  --card: #ffffff;
+  --edge: #d9e7e1;
+  --edge-strong: #c2d8ce;
+  --ink: #203e35;
+  --muted: #5d756c;
+  --accent: #287863;
+  --accent-strong: #1f6352;
+  --accent-soft: #e7f3ed;
+  --warn: #97591c;
+  --danger: #a83737;
+  --danger-soft: #fdf1f0;
+  --focus: #287863;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Segoe UI Variable", system-ui, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+::selection {
+  background: #cfe7dc;
+  color: #17372e;
+}
+
+.head {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.head > div {
+  min-width: 0;
+}
+
+.logo {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  padding: 5px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  border: 1px solid var(--edge);
+  object-fit: contain;
+}
+
+h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: #16372e;
+}
+
+.sub {
+  margin: 4px 0 0;
+  max-width: 640px;
+  color: #5b7369;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+main {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 18px 18px;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: #c7dcd2 transparent;
+}
+
+main::-webkit-scrollbar {
+  width: 10px;
+}
+
+main::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+main::-webkit-scrollbar-thumb {
+  background: #c9ded4;
+  border: 3px solid var(--bg);
+  border-radius: 999px;
+}
+
+main::-webkit-scrollbar-thumb:hover {
+  background: #afd0c1;
+}
+
+.card {
+  min-width: 0;
+  background: var(--card);
+  border: 1px solid var(--edge);
+  border-radius: 14px;
+  padding: 16px 17px 17px;
+  box-shadow: 0 1px 2px rgba(32, 62, 53, 0.035);
+}
+
+h2 {
+  margin: 0 0 11px;
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--ink);
+}
+
+/* 每栏标题 + 右上角那个"恢复默认"圆圈按钮 */
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 11px;
+}
+
+.card-head h2 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.icon-btn {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+  background: #f8fbfa;
+  color: #5f7a70;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s, transform 0.08s;
+}
+
+.icon-btn svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.icon-btn:hover {
+  color: var(--accent-strong);
+  border-color: #b9d6ca;
+  background: var(--accent-soft);
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* 需要留意的两项（开机启动）：用暖棕提示色，浅色底上仍清晰 */
+.label.hot {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+  min-width: 0;
+}
+
+.row .label {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.row.switch {
+  cursor: pointer;
+}
+
+.row.switch:hover .label {
+  color: var(--accent-strong);
+}
+
+.row.switch:hover .label.hot {
+  color: var(--warn);
+}
+
+/* 接入的 Agent：两列网格 —— 第一列先排满，再排第二列（顺序和 agentList 一致） */
+.agent-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(6, minmax(0, auto));
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px 10px;
+  padding: 2px 0 4px;
+}
+
+.agent-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: #fbfdfc;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.agent-cell:hover {
+  border-color: #b9d6ca;
+  background: var(--accent-soft);
+}
+
+.agent-cell .agent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-cell .tick {
+  flex: 0 0 auto;
+  opacity: 0;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.agent-cell.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: #174c3d;
+}
+
+.agent-cell.active .tick {
+  opacity: 1;
+}
+
+.agent-cell:active {
+  background: #dcece5;
+}
+
+.agent-cell:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.value {
+  flex: 0 0 auto;
+  min-width: 42px;
+  text-align: right;
+  color: #48665b;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="range"] {
+  flex: 1 1 120px;
+  min-width: 96px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+input[type="range"]:hover {
+  filter: saturate(1.1) brightness(0.97);
+}
+
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+input[type="range"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 开关：统一的 40×22 轨道 + 白色滑块，和滑条、下拉同一套绿色 */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  position: relative;
+  width: 40px;
+  height: 22px;
+  margin: 0;
+  border: 1px solid #c5d8cf;
+  border-radius: 999px;
+  background: #dfeae5;
+  cursor: pointer;
+  transition: background-color 0.14s ease, border-color 0.14s ease;
+}
+
+input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(32, 62, 53, 0.22);
+  transition: transform 0.14s ease;
+}
+
+input[type="checkbox"]:hover {
+  border-color: #a8c9bb;
+  background: #d7e6df;
+}
+
+input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+input[type="checkbox"]:checked:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+input[type="checkbox"]:checked::before {
+  transform: translateX(18px);
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+.btn {
+  max-width: 100%;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+  padding: 8px 14px;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
+}
+
+.btn:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.btn.ghost {
+  border-color: var(--edge);
+  background: #ffffff;
+  color: #3d5f53;
+}
+
+.btn.ghost:hover {
+  color: var(--accent-strong);
+  border-color: #b9d6ca;
+  background: var(--accent-soft);
+}
+
+.btn.danger {
+  border-color: #e6c3bf;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.btn.danger:hover {
+  border-color: #d9aaa4;
+  background: #fbe4e1;
+  color: #8f2c2c;
+}
+
+.hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.hint b,
+.bottom-hint b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.hint-inline {
+  color: #5c746a;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* 排查栏的缓存占用数字：用红色标出来，一眼能看到（2026-10-11 加） */
+#cache-size {
+  color: #a93535;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: 8px;
+}
+
+.motion-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.motion-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #e4efe9;
+  border-radius: 9px;
+  background: #f7fbf9;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
+}
+
+.motion-item:hover {
+  background: #eef7f2;
+  border-color: #cfe3da;
+}
+
+.motion-item > span:not(.tag) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.motion-item input[type="checkbox"] {
+  position: relative;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  border: 1px solid #bdd3c9;
+  background: #ffffff;
+}
+
+.motion-item input[type="checkbox"]:hover {
+  border-color: #a9c9bb;
+  background: #f2f9f5;
+}
+
+.motion-item input[type="checkbox"]:checked:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.motion-item input[type="checkbox"]::before {
+  display: none;
+}
+
+.motion-item input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 4px;
+  border-left: 2px solid #ffffff;
+  border-bottom: 2px solid #ffffff;
+  opacity: 0;
+  transform: translate(-50%, -60%) rotate(-45deg) scale(0.6);
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+
+.motion-item input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.motion-item input[type="checkbox"]:checked::after {
+  opacity: 1;
+  transform: translate(-50%, -60%) rotate(-45deg) scale(1);
+}
+
+.motion-item input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.motion-item .tag {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.now {
+  padding: 10px 12px;
+  border: 1px solid #cfe3da;
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: #2f574b;
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.state-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 42%);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #e4efe9;
+  border-radius: 10px;
+  background: #f7fbf9;
+}
+
+.state-item .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 2px rgba(40, 120, 99, 0.07);
+}
+
+.state-item .name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+select {
+  min-width: 0;
+  max-width: 150px;
+  width: auto;
+  padding: 6px 28px 6px 9px;
+  border: 1px solid var(--edge-strong);
+  border-radius: 8px;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23287863' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 10px 6px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color 0.12s, background-color 0.12s, box-shadow 0.12s;
+}
+
+select:hover {
+  border-color: #a9c9bb;
+  background-color: #f7fbf9;
+}
+
+select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(40, 120, 99, 0.28);
+}
+
+select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background-color: #f3f7f5;
+}
+
+select option {
+  background: #ffffff;
+  color: var(--ink);
+}
+
+.row select {
+  flex: 0 1 150px;
+  width: 150px;
+  max-width: 100%;
+}
+
+.state-item select {
+  width: 100%;
+  max-width: 150px;
+  justify-self: end;
+}
+
+.foot {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 11px 18px;
+  border-top: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.spacer {
+  flex: 1 1 16px;
+}
+
+.status {
+  min-width: 0;
+  color: #1f6f4a;
+  font-size: 12px;
+  line-height: 1.5;
+  min-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.dirty {
+  color: #8a5416;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.btn:disabled,
+.btn:disabled:hover,
+.btn.ghost:disabled,
+.btn.ghost:disabled:hover,
+.btn.danger:disabled,
+.btn.danger:disabled:hover {
+  opacity: 1;
+  background: #eef4f1;
+  border-color: #dbe7e1;
+  color: #74897f;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.bottom-hint {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: #3b5e53;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 底部按钮：跟「状态对应的表情」共用同一套卡片网格（.grid + .state-item），
+   一行一个按钮触发方式：圆点 + 名称 + 下拉。 */
+#bottom-button-actions {
+  margin-top: 10px;
+}
+
+.bottom-action-item .name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bottom-action-item select {
+  max-width: 150px;
+}
+
+/* 兼容可能出现的折叠说明块（本页当前未使用 details，保留统一外观） */
+details {
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+summary {
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+summary:hover {
+  color: var(--accent-strong);
+}
+
+summary::marker {
+  color: var(--accent);
+}
+
+#agent-hint {
+  color: var(--muted) !important;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+/* settings.js 会给提示文字写内联颜色；这里把它换成浅底上可读的深绿 / 深棕，
+   同时保留"已读到 / 未读到"的区分。 */
+#agent-hint[style*="rgb(58, 157, 93)"] {
+  color: #1f6f4a !important;
+}
+
+#agent-hint[style*="rgb(138, 109, 31)"] {
+  color: #7d5410 !important;
+}
+
+#desktop-link[data-exists="1"] {
+  color: #1f6f4a;
+}
+
+#desktop-link[data-exists="0"] {
+  color: #8a5a12;
+}
+
+@media (max-width: 600px) {
+  .head {
+    padding: 14px 14px 12px;
+  }
+
+  .logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  h1 {
+    font-size: 18px;
+  }
+
+  main {
+    padding: 12px 14px 14px;
+    gap: 11px;
+  }
+
+  .card {
+    padding: 14px 13px 15px;
+    border-radius: 12px;
+  }
+}
+
+@media (max-width: 560px) {
+  .foot {
+    padding: 10px 14px;
+  }
+
+  .foot .spacer {
+    flex: 1 1 100%;
+    height: 0;
+  }
+
+  .foot .btn {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 480px) {
+  /* 窄窗口下 Agent 改单列，长名字不挤压、不重叠 */
+  .agent-grid {
+    grid-auto-flow: row;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none !important;
+  }
+
+  .row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .row .label {
+    flex: 1 1 100%;
+  }
+
+  .row.switch .label {
+    flex: 1 1 calc(100% - 54px);
+  }
+
+  .row select {
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 140px;
+    max-width: 100%;
+  }
+
+  input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 88px;
+  }
+
+  .value {
+    min-width: 46px;
+  }
+}
+
+@media (max-width: 380px) {
+  .head {
+    gap: 10px;
+    padding: 12px 12px 10px;
+  }
+
+  .card {
+    padding: 13px 12px 14px;
+  }
+
+  main {
+    padding: 10px 12px 12px;
+  }
+
+  .foot {
+    padding: 9px 12px;
+  }
+
+  .foot .btn {
+    flex: 1 1 100%;
+  }
+
+  .bottom-action-item .name {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn,
+  .btn,
+  .agent-cell,
+  .motion-item,
+  select,
+  input[type="checkbox"] {
+    transition: none;
+  }
+}
