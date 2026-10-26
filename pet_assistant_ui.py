@@ -1,8 +1,22 @@
 """Small native panels, constructed only when explicitly opened."""
-import os
-from pathlib import Path
 
 def open_panel(host,kind):
+    if kind!='tools' and callable(getattr(host,'create_props',None)):
+        from pet_desktop_panels import open_desktop_panel,open_control_center
+        view={'inbox':'inbox','buddy':'companion'}.get(kind,'reminder')
+        try:return open_control_center(host) if kind=='control' else open_desktop_panel(host,view)
+        except Exception:pass
+    return _open_native_panel(host,kind)
+
+def _control_fallback_links(host):
+    from pet_buddy_ui import _open_native_dnd,_open_native_panel
+    return (('勿扰模式',lambda:_open_native_dnd(host)),
+            ('陪伴与互动',lambda:_open_native_panel(host,'buddy')))
+
+def _open_native_panel(host,kind):
+    if kind=='tools':
+        from pet_assistant import open_tool_center
+        return open_tool_center(host.assistant_base,host.assistant_launcher)
     if kind in ('inbox','buddy'):
         from pet_buddy_ui import open_panel as open_buddy_panel
         return open_buddy_panel(host,kind)
@@ -12,10 +26,9 @@ def open_panel(host,kind):
     from System.Drawing import Color,Font,Size
     from System.Windows.Forms import (Form,FlowLayoutPanel,FlowDirection,DockStyle,Padding,
         Label,Button,CheckBox,AutoScaleMode,FormStartPosition,Screen,MessageBox,Timer)
-    from pet_assistant import load_tools
     scale=max(1,float(getattr(host,'dpi_scale',1)))
     px=lambda value:round(value*scale)
-    form=Form();form.Text=('常用工具' if kind=='tools' else '任务提醒设置')+' · Agent 桌宠'
+    form=Form();form.Text=('常用工具' if kind=='tools' else '桌宠控制台 · 兼容模式' if kind=='control' else '任务提醒设置')+' · Agent 桌宠'
     form.AutoScaleMode=getattr(AutoScaleMode,'None');form.StartPosition=FormStartPosition.CenterScreen
     area=Screen.FromControl(host.form).WorkingArea
     form.ClientSize=Size(min(px(460),area.Width-40),min(px(470 if kind=='tools' else 390),area.Height-70))
@@ -35,30 +48,17 @@ def open_panel(host,kind):
         item.Click+=lambda sender,args:handler();return add(item,height)
     def error(exc):MessageBox.Show(form,str(exc),'操作未完成')
     timer=None
-    if kind=='tools':
-        label('选择一个工具，已打开的窗口会被唤起。')
-        try:tools=load_tools(host.assistant_base)
-        except (OSError,ValueError) as exc:tools=[];label(str(exc),70)
-        status=Label();status.Text='';status.ForeColor=Color.FromArgb(70,88,77)
-        def launch(entry):
-            try:status.Text=host.assistant_launcher.open(entry)['message']
-            except (OSError,ValueError) as exc:status.Text=str(exc);error(exc)
-        for entry in tools:button(entry['name'],lambda entry=entry:launch(entry))
-        add(status,60)
-        def logs():
-            folder=Path(host.assistant_base)/'assistant_logs';folder.mkdir(exist_ok=True);os.startfile(str(folder))
-        button('打开工具启动日志',logs)
-        timer=Timer();timer.Interval=1000
-        def update(sender,args):
-            messages=host.assistant_launcher.poll()
-            if messages:status.Text=messages[-1]
-        timer.Tick+=update;timer.Start()
-    else:
-        label('新任务完成或需要回复时提醒；同一状态不反复弹出。',55)
+    if kind!='tools':
+        if kind=='control':
+            for title,handler in _control_fallback_links(host):button(title,handler)
+        label('通知偏好',30)
         checks={}
-        for key,text in (('done','任务完成时提醒'),('waiting','等待我确认或回复时提醒'),('sound','提醒时播放提示音'),('showTitle','在通知中显示任务名称')):
+        for key,text in (('done','任务完成\n完成工作时提醒你查看结果。'),
+                         ('waiting','需要确认\nAgent 等待你回复或操作时提醒。'),
+                         ('sound','提示音\n收到通知时播放系统提示音。'),
+                         ('showTitle','显示任务名称\n关闭后，也会隐藏历史提醒中的标题。')):
             item=CheckBox();item.Text=text;item.Checked=bool(host.assistant_settings[key]);add(item,30);checks[key]=item
-        status=label(host.assistant_store.error or '默认无声，气泡显示8秒。隐藏/勿扰时只记录，可在提醒收件箱查看。',50)
+        status=label(host.assistant_store.error or '提醒会保留在收件箱。隐藏或勿扰时不弹出。',50)
         def save():
             try:
                 host.assistant_settings=host.assistant_store.save({k:bool(v.Checked) for k,v in checks.items()})

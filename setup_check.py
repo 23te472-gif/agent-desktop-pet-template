@@ -3,6 +3,7 @@ from pathlib import Path
 import importlib.util
 import json
 import sys
+sys.dont_write_bytecode=True
 
 BASE = Path(__file__).resolve().parent
 

@@ -35,7 +35,8 @@ import re
 import time
 
 HOME = os.path.expanduser("~")
-BRIDGE_DIR = os.path.join(HOME, ".codexpet", "status")
+from pet_paths import data_dir
+BRIDGE_DIR = str(data_dir()/"status")
 BRIDGE_FRESH_SECONDS = 180.0
 # 工具调用超过这么久还没看到结果，就不再当成"正在跑"（多半是记录不全或早就结束了）
 PENDING_TOOL_MAX_AGE = 30 * 60.0
@@ -1582,7 +1583,7 @@ def _dsh_snapshot(spec: dict) -> dict:
     activity = ""
     last_role = "assistant"
     waiting = bool(active_questions)
-    if busy:
+    if busy and not waiting:
         last_role = "tool"
         state_hint = "working"
         if pending_tool:

@@ -66,6 +66,8 @@ const BOTTOM_DEFAULT_ACTIONS = {
 
 // 各项的默认值：底下"恢复默认"（整页 / 每一栏）都用这一份
 const DEFAULTS = {
+  petAppearance: "legacy",
+  settingsTheme: "paper",
   scale: 1,
   opacity: 1,
   gazeRange: 320,
@@ -107,7 +109,7 @@ const STATE_DEFAULT_EXPR = {
 
 // 每一栏"恢复默认"管哪些设置
 const RESET_SCOPES = {
-  appearance: ["scale", "opacity", "gazeRange", "autoExpression", "autoMotion", "alwaysOnTop", "showChip", "fpsLimit"],
+  appearance: ["petAppearance", "settingsTheme", "scale", "opacity", "gazeRange", "autoExpression", "autoMotion", "alwaysOnTop", "showChip", "fpsLimit"],
   agent: ["agent", "usageMode", "autostart"],
   card: ["cardStyle", "cardGap", "cardScaleWithPet", "followDesktop", "wheelZoom", "cardBlur"],
   bottom: ["bottomButtonsMode"],
@@ -126,6 +128,20 @@ const RESET_SCOPE_NAMES = {
 };
 
 const $ = (id) => document.getElementById(id);
+const hasNativeBridge = Boolean(window.chrome && window.chrome.webview);
+
+// 设置页配色：只允许 paper / ice。切换立即预览，保存后才写进设置。
+function normalizeTheme(value) {
+  return value === "ice" ? "ice" : "paper";
+}
+
+function applyTheme(value) {
+  const theme = normalizeTheme(value);
+  const select = $("settingsTheme");
+  if (select && select.value !== theme) select.value = theme;
+  document.documentElement.dataset.settingsTheme = theme;
+  return theme;
+}
 
 const bridge = (() => {
   const wv = window.chrome && window.chrome.webview;
@@ -147,11 +163,24 @@ let current = null;
 let statusTimer = 0;
 let baseline = null;   // 最近一次"已应用"的快照；和当前界面不一致就是有未保存的改动
 let renderFps = 0;     // 桌宠上报的实时渲染帧率（用来在"渲染帧率上限"旁边显示效果）
+let settingsResizeDrag = null;
 
 function flash(text) {
-  $("status").textContent = text;
+  const status = $("status");
+  const feedback = $("feedbackToast");
   clearTimeout(statusTimer);
-  statusTimer = setTimeout(() => ($("status").textContent = ""), 1800);
+  if (status) status.textContent = "";
+  if (feedback) {
+    feedback.textContent = text;
+    feedback.hidden = false;
+  }
+  statusTimer = setTimeout(() => {
+    statusTimer = 0;
+    if (feedback) {
+      feedback.hidden = true;
+      feedback.textContent = "";
+    }
+  }, 1800);
 }
 
 function buildStateGrid(expressions, mapping) {
@@ -260,6 +289,8 @@ function collect() {
     expressions[sel.dataset.state] = sel.value;
   });
   return {
+    petAppearance: $("petAppearance").value === "dragon" ? "dragon" : "legacy",
+    settingsTheme: normalizeTheme($("settingsTheme").value),
     scale: Number($("scale").value),
     opacity: Number($("opacity").value),
     gazeRange: Number($("gazeRange").value),
@@ -312,6 +343,7 @@ function push() {
 
 function markDirty() {
   const dirty = baseline !== null && JSON.stringify(collect()) !== baseline;
+  $("settingsFooter").hidden = !dirty;
   $("dirty").textContent = dirty ? "● 有未保存的更改" : "";
   $("act-save").disabled = !dirty;
   $("act-revert").disabled = !dirty;
@@ -382,23 +414,36 @@ function updateAgentHint() {
   if (shared) {
     el.textContent = "";
     el.style.display = "none";
+    el.removeAttribute("data-status");
     return;
   }
   const bridge = "~/.codexpet/status/" + id + ".json";
   el.style.display = "";
   if (info.found) {
     el.textContent = "✓ 可读本地记录（" + (info.detail || "已检测到") + "）";
-    el.style.color = "#3a9d5d";
+    el.dataset.status = "found";
   } else {
     el.textContent = "○ 还没读到本地记录——用它跑一次就有了；也可以走状态桥：" +
       "python status-bridge.py --agent " + id + " --state working（写进 " + bridge + "）";
-    el.style.color = "#8a6d1f";
+    el.dataset.status = "missing";
   }
+}
+
+function syncAppearancePreview() {
+  const dragon = $("petAppearance").value === "dragon";
+  $("appearancePreview").src = "preview.svg";
+  $("appearancePreview").alt = "模型预览占位图";
+  $("appearanceHint").textContent = dragon ? "使用另行提供的扩展素材。" : "使用 web/model/ 中自行安装的模型；本模板不附角色素材。";
 }
 
 function render(cfg) {
   const __t0 = performance.now();
   current = cfg;
+  const supported = cfg.availableAppearances || ["legacy"];
+  for (const option of $("petAppearance").options) option.disabled = !supported.includes(option.value);
+  $("petAppearance").value = cfg.petAppearance === "dragon" ? "dragon" : "legacy";
+  syncAppearancePreview();
+  applyTheme(cfg.settingsTheme);
   if (cfg.scaleMin != null) $("scale").min = cfg.scaleMin;
   if (cfg.scaleMax != null) $("scale").max = cfg.scaleMax;
   $("scale").value = cfg.scale != null ? cfg.scale : 1;
@@ -526,6 +571,7 @@ function applyDefaults(keys) {
     const value = DEFAULTS[id];
     if (el.type === "checkbox") el.checked = Boolean(value);
     else el.value = value;
+    if (id === "settingsTheme") applyTheme(value);
     if (id === "agent") selectAgent(value, true);
   }
 }
@@ -571,7 +617,137 @@ function resetScope(scope) {
   flash(`已把「${RESET_SCOPE_NAMES[scope] || scope}」填回默认值，点「保存并应用」生效`);
 }
 
+function releaseSettingsResizeCapture(drag) {
+  if (!drag) return;
+  try {
+    if (drag.edge.hasPointerCapture && drag.edge.hasPointerCapture(drag.pointerId)) {
+      drag.edge.releasePointerCapture(drag.pointerId);
+    }
+  } catch (error) {
+    // Capture may already be gone after cancel / lost capture.
+  }
+}
+
+function sendSettingsResizeMove(drag) {
+  if (!drag) return;
+  if (drag.lastDx === drag.sentDx && drag.lastDy === drag.sentDy) return;
+  drag.sentDx = drag.lastDx;
+  drag.sentDy = drag.lastDy;
+  bridge.send({ t: "window", op: "resize", phase: "move", dx: drag.lastDx, dy: drag.lastDy });
+}
+
+function scheduleSettingsResizeMove(drag) {
+  if (!drag || drag.frame) return;
+  drag.frame = window.requestAnimationFrame(() => {
+    if (settingsResizeDrag !== drag) return;
+    drag.frame = 0;
+    sendSettingsResizeMove(drag);
+  });
+}
+
+function handleSettingsResizeMove(event) {
+  const drag = settingsResizeDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  drag.lastDx = (event.screenX - drag.startX) * drag.dpr;
+  drag.lastDy = (event.screenY - drag.startY) * drag.dpr;
+  scheduleSettingsResizeMove(drag);
+}
+
+function finishSettingsResizeDrag(event) {
+  const drag = settingsResizeDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (drag.frame) {
+    window.cancelAnimationFrame(drag.frame);
+    drag.frame = 0;
+  }
+  try {
+    sendSettingsResizeMove(drag);
+  } catch (error) {
+    // Keep the end message independent of a failed final move.
+  }
+  try {
+    bridge.send({ t: "window", op: "resize", phase: "end" });
+  } catch (error) {
+    // The native window may already be gone; cleanup still runs once.
+  } finally {
+    settingsResizeDrag = null;
+    releaseSettingsResizeCapture(drag);
+  }
+}
+
+function beginSettingsResize(event, edge) {
+  if (!hasNativeBridge || event.button !== 0 || settingsResizeDrag) return;
+  event.preventDefault();
+  event.stopPropagation();
+  let dpr = Number(window.devicePixelRatio);
+  if (!isFinite(dpr) || dpr <= 0) dpr = 1;
+  const drag = {
+    pointerId: event.pointerId,
+    edge,
+    startX: event.screenX,
+    startY: event.screenY,
+    dpr,
+    lastDx: 0,
+    lastDy: 0,
+    sentDx: 0,
+    sentDy: 0,
+    frame: 0,
+  };
+  try {
+    edge.setPointerCapture(event.pointerId);
+  } catch (error) {
+    return;
+  }
+  settingsResizeDrag = drag;
+  try {
+    bridge.send({
+      t: "window",
+      op: "resize",
+      phase: "start",
+      edge: edge.getAttribute("data-resize-edge"),
+    });
+  } catch (error) {
+    settingsResizeDrag = null;
+    releaseSettingsResizeCapture(drag);
+  }
+}
+
+function wireWindowShell() {
+  const close = $("closeSettings");
+  if (close) {
+    close.addEventListener("click", () => bridge.send({ t: "window", op: "close" }));
+  }
+  if (!hasNativeBridge) return;
+
+  const resizeLayer = $("settingsResizeLayer");
+  if (resizeLayer) resizeLayer.hidden = false;
+
+  const header = document.querySelector(".app-header");
+  if (header) {
+    header.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      if (event.target.closest("button, input, select, textarea, a, label")) return;
+      event.preventDefault();
+      bridge.send({ t: "window", op: "drag" });
+    });
+  }
+
+  document.querySelectorAll(".resize-edge").forEach((edge) => {
+    edge.addEventListener("pointerdown", (event) => beginSettingsResize(event, edge));
+  });
+  window.addEventListener("pointermove", handleSettingsResizeMove, true);
+  window.addEventListener("pointerup", finishSettingsResizeDrag, true);
+  window.addEventListener("pointercancel", finishSettingsResizeDrag, true);
+  window.addEventListener("lostpointercapture", finishSettingsResizeDrag, true);
+}
+
 function wire() {
+  applyTheme($("settingsTheme").value);
+  wireWindowShell();
   const scale = $("scale");
   const opacity = $("opacity");
   scale.addEventListener("input", () => ($("scale-out").textContent = Math.round(Number(scale.value) * 100) + "%"));
@@ -588,6 +764,11 @@ function wire() {
   ["alwaysOnTop", "showChip", "followDesktop", "wheelZoom", "cardBlur", "usageMode"].forEach((id) =>
     $(id).addEventListener("change", push)
   );
+  $("settingsTheme").addEventListener("change", () => {
+    applyTheme($("settingsTheme").value);
+    push();
+  });
+  $("petAppearance").addEventListener("change", () => { syncAppearancePreview(); push(); });
   $("cardStyle").addEventListener("change", push);
   $("cardGap").addEventListener("input", () => {
     $("card-gap-out").textContent = Number($("cardGap").value) + " px";
@@ -734,6 +915,7 @@ bridge.send({ t: "hello" });
 if (!(window.chrome && window.chrome.webview)) {
   setTimeout(() => {
     render({
+      settingsTheme: "paper",
       scale: 1,
       opacity: 1,
       alwaysOnTop: true,
@@ -776,7 +958,7 @@ if (!(window.chrome && window.chrome.webview)) {
       motionGapSeconds: 4,
       cacheText: "372.4 MB",
       desktopLink: true,
-      logPath: "pet.log",
+      logPath: "C:\\...\\outputs\\CodexPet\\pet.log",
     });
   }, 50);
 }

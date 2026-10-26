@@ -7,6 +7,8 @@ the previous state, and raises BuddyWriteError for the UI to show.
 """
 from __future__ import annotations
 
+from pet_agent_reminders import normalize_agent
+
 import copy
 import json
 import math
@@ -20,9 +22,11 @@ from pathlib import Path
 
 MAX_ITEMS = 50
 MAX_BYTES = 64 * 1024
-DND_MINUTES = (15, 30, 60)
+DND_MINUTES = tuple(range(1, 61))
 COOLDOWN_SECONDS = 60
 GOAL_TARGET = 3
+AFFINITY_MAX = 100
+AFFINITY_PER_PAT = 15
 KINDS = frozenset(("done", "waiting", "quota"))
 SOURCES = frozenset(("live", "quiet", "hidden", "dnd", "other-thread"))
 FEEDBACK_TEXTS = (
@@ -42,10 +46,11 @@ def _fresh_state() -> dict:
     return {
         "version": 1,
         "inbox": [],
-        "dnd": {"until": 0.0, "since": 0.0, "summary_due": False},
+        "dnd": {"until": 0.0, "since": 0.0, "summary_due": False, "indefinite": False},
         "interaction": {
             "date": "",
             "today": 0,
+            "affinity": 0,
             "total": 0,
             "active_days": 0,
             "last_count": 0.0,
@@ -114,6 +119,7 @@ class BuddyStore:
                         "at": at,
                         "read": bool(value.get("read", False)),
                         "source": item_source if item_source in SOURCES else "live",
+                        "agent": normalize_agent(value.get("agent")),
                         "key": key[:160],
                         "detail": detail[:120],
                     }
@@ -125,12 +131,14 @@ class BuddyStore:
         if isinstance(dnd, dict):
             until = max(0.0, _number(dnd.get("until")))
             since = max(0.0, _number(dnd.get("since")))
-            if until <= 0:
+            indefinite = dnd.get("indefinite") is True
+            if until <= 0 and not indefinite:
                 since = 0.0
             state["dnd"] = {
                 "until": until,
                 "since": since,
                 "summary_due": bool(dnd.get("summary_due", False)),
+                "indefinite": indefinite,
             }
 
         interaction = raw.get("interaction")
@@ -140,6 +148,7 @@ class BuddyStore:
             state["interaction"] = {
                 "date": str(interaction.get("date") or "")[:10],
                 "today": max(0, min(target, int(_number(interaction.get("today"))))),
+                "affinity": max(0, min(AFFINITY_MAX, int(_number(interaction.get("affinity"))))),
                 "total": max(0, int(_number(interaction.get("total")))),
                 "active_days": max(0, int(_number(interaction.get("active_days")))),
                 "last_count": max(0.0, _number(interaction.get("last_count"))),
@@ -222,15 +231,17 @@ class BuddyStore:
         key="",
         detail="",
         show_title=True,
+        agent="codex",
     ) -> dict:
         if kind not in KINDS:
             raise ValueError("提醒类型无效")
         source = source if source in SOURCES else "live"
         now = self._now(now)
+        agent = normalize_agent(agent)
         key = str(key or "")[:160]
         if key:
             for item in self.state["inbox"]:
-                if item["key"] == key:
+                if item["key"] == key and normalize_agent(item.get("agent")) == agent:
                     return copy.deepcopy(item)
         title = " ".join(str(title or "").split())[:80] if show_title else ""
         detail = " ".join(str(detail or "").split())[:120] if show_title else ""
@@ -241,6 +252,7 @@ class BuddyStore:
             "at": now,
             "read": False,
             "source": source,
+            "agent": agent,
             "key": key,
             "detail": detail,
         }
@@ -251,33 +263,33 @@ class BuddyStore:
         self._commit(candidate)
         return copy.deepcopy(item)
 
-    def mark_read(self, item_id) -> bool:
+    def mark_read(self, item_id, agent=None) -> bool:
         changed = False
         candidate = copy.deepcopy(self.state)
         for item in candidate["inbox"]:
-            if item["id"] == item_id and not item["read"]:
+            if item["id"] == item_id and not item["read"] and (agent is None or normalize_agent(item.get("agent"))==normalize_agent(agent)):
                 item["read"] = True
                 changed = True
         if changed:
             self._commit(candidate)
         return changed
 
-    def mark_all_read(self) -> int:
+    def mark_all_read(self, agent=None) -> int:
         changed = 0
         candidate = copy.deepcopy(self.state)
         for item in candidate["inbox"]:
-            if not item["read"]:
+            if not item["read"] and (agent is None or normalize_agent(item.get("agent"))==normalize_agent(agent)):
                 item["read"] = True
                 changed += 1
         if changed:
             self._commit(candidate)
         return changed
 
-    def clear_inbox(self) -> int:
-        count = len(self.state["inbox"])
+    def clear_inbox(self, agent=None) -> int:
+        count = sum(1 for x in self.state["inbox"] if agent is None or normalize_agent(x.get("agent"))==normalize_agent(agent))
         if count:
             candidate = copy.deepcopy(self.state)
-            candidate["inbox"] = []
+            candidate["inbox"] = [x for x in candidate["inbox"] if agent is not None and normalize_agent(x.get("agent"))!=normalize_agent(agent)]
             self._commit(candidate)
         return count
 
@@ -294,33 +306,35 @@ class BuddyStore:
             self._commit(candidate)
         return changed
 
-    def unread_count(self) -> int:
-        return sum(1 for item in self.state["inbox"] if not item["read"])
+    def unread_count(self, agent=None) -> int:
+        return sum(1 for item in self.state["inbox"] if not item["read"] and (agent is None or normalize_agent(item.get("agent"))==normalize_agent(agent)))
 
     # -- DND --------------------------------------------------------------
     def dnd_active(self, now=None) -> bool:
         dnd = self.state["dnd"]
-        return bool(dnd["until"] > self._now(now))
+        return bool(dnd["indefinite"] or dnd["until"] > self._now(now))
 
-    def dnd_remaining(self, now=None) -> int:
+    def dnd_remaining(self, now=None) -> int | None:
         dnd = self.state["dnd"]
+        if dnd["indefinite"]:return None
         return max(0, int(math.ceil(dnd["until"] - self._now(now))))
 
     def dnd_pending(self, now=None) -> bool:
         dnd = self.state["dnd"]
-        return bool(dnd["until"] and dnd["summary_due"] and self._now(now) >= dnd["until"])
+        return bool(not dnd["indefinite"] and dnd["until"] and dnd["summary_due"] and self._now(now) >= dnd["until"])
 
-    def set_dnd(self, minutes, now=None) -> int:
-        if type(minutes) is not int or minutes not in DND_MINUTES:
+    def set_dnd(self, minutes, now=None) -> int | None:
+        if minutes is not None and (type(minutes) is not int or minutes not in DND_MINUTES):
             raise ValueError("勿扰时长无效")
         now = self._now(now)
         current = self.state["dnd"]
-        since = current["since"] if current["until"] > now and current["since"] > 0 else now
+        since = current["since"] if self.dnd_active(now) else now
         candidate = copy.deepcopy(self.state)
         candidate["dnd"] = {
-            "until": now + minutes * 60,
+            "until": now + minutes * 60 if minutes is not None else 0.0,
             "since": since,
             "summary_due": True,
+            "indefinite": minutes is None,
         }
         self._commit(candidate)
         return self.dnd_remaining(now)
@@ -328,13 +342,14 @@ class BuddyStore:
     def cancel_dnd(self, now=None) -> None:
         now = self._now(now)
         current = self.state["dnd"]
-        if current["until"] <= now and not current["summary_due"]:
+        if not current["indefinite"] and current["until"] <= now and not current["summary_due"]:
             return
         candidate = copy.deepcopy(self.state)
         candidate["dnd"] = {
             "until": now,
             "since": current["since"],
             "summary_due": True,
+            "indefinite": False,
         }
         self._commit(candidate)
 
@@ -357,7 +372,7 @@ class BuddyStore:
     def expire_dnd(self, now=None):
         now = self._now(now)
         dnd = self.state["dnd"]
-        if dnd["until"] <= 0 or now < dnd["until"]:
+        if dnd["indefinite"] or not dnd["summary_due"] or now < dnd["until"]:
             return None
         since = dnd["since"]
         items = [
@@ -366,7 +381,7 @@ class BuddyStore:
             if not item["read"] and item["at"] >= since
         ]
         candidate = copy.deepcopy(self.state)
-        candidate["dnd"] = {"until": 0.0, "since": 0.0, "summary_due": False}
+        candidate["dnd"] = {"until": 0.0, "since": 0.0, "summary_due": False, "indefinite": False}
         self._commit(candidate)
         if not items:
             return None
@@ -376,9 +391,12 @@ class BuddyStore:
     def interaction_snapshot(self, now=None) -> dict:
         now = self._now(now)
         interaction = self.state["interaction"]
-        today = interaction["today"] if interaction["date"] == self._today(now) else 0
+        same_day = interaction["date"] == self._today(now)
+        today = interaction["today"] if same_day else 0
         return {
             "today": today,
+            "affinity": interaction.get("affinity", 0) if same_day else 0,
+            "affinity_max": AFFINITY_MAX,
             "target": interaction["target"],
             "total": interaction["total"],
             "active_days": interaction["active_days"],
@@ -398,6 +416,11 @@ class BuddyStore:
         if interaction["date"] != today:
             interaction["date"] = today
             interaction["today"] = 0
+            interaction["affinity"] = 0
+            changed = True
+
+        if kind == "pat" and interaction.get("affinity", 0) < AFFINITY_MAX:
+            interaction["affinity"] = min(AFFINITY_MAX, interaction.get("affinity", 0) + AFFINITY_PER_PAT)
             changed = True
 
         counted = False
@@ -424,6 +447,8 @@ class BuddyStore:
         return {
             "counted": counted,
             "today": interaction["today"],
+            "affinity": interaction.get("affinity", 0),
+            "affinity_max": AFFINITY_MAX,
             "target": interaction["target"],
             "total": interaction["total"],
             "active_days": interaction["active_days"],

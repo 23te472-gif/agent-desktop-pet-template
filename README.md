@@ -1,27 +1,37 @@
-# Agent 桌宠 · 源码模板
+# Agent Desktop Pet · 开源源码副本
 
-Windows 桌面 Live2D 助手模板，包含透明置顶角色窗口、任务状态卡、提醒收件箱、陪伴目标、游戏安静模式，以及蓝白圆角快捷栏。快捷栏保留独立 `Form.TopMost` 浮窗与单图标平滑过渡。
+Windows 桌面助手：Agent 状态、提醒收件箱、勿扰、陪伴互动、额度气泡，以及可选的外部工具中心入口。包含环绕互动、分组“更多”、冷白蓝/暖白绿和窄柔边。
 
-**这是需要自备模型与第三方运行库的源码模板，不是带角色的即开即用安装包。** 首次缺少资源时会在创建窗口、获取单实例锁之前列出缺失项并退出，不会留下空白透明窗口。
+这是**自备模型与运行库的源码模板**。不包含原角色、模型、贴图、表情原图、个人配置、登录信息或第三方二进制。缺少资源时会在创建窗口和取得单实例锁之前列出缺失项并退出。
 
-## 环境与安装
+## 安装与启动
 
-1. Windows 10/11 x64，安装 Windows x64 CPython 3.12（包含 `py` 启动器）。安装 Microsoft Edge WebView2 Runtime：[微软官方页面](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)。
-2. 将本目录解压到可写位置。双击 `安装依赖.cmd`，它会创建目录内的 `.venv` 并安装 `requirements.txt`。也可在本目录手动执行：
+Windows 10/11 x64，64 位 CPython 3.12，以及 Microsoft Edge WebView2 Runtime。
+
+1. 在可写位置解压，运行 `安装依赖.cmd`，或执行：
 
    ```powershell
    py -3.12 -m venv .venv
    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
    ```
 
-3. 安装下面的 JavaScript 库及模型。
-4. 双击 `诊断.cmd`，完成缺失项后双击 `启动桌宠.cmd`。前台启动支持参数，例如 `启动桌宠.cmd --show-banner`。后台启动可执行 `powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File .\pet-launcher.ps1`。
+2. 自行准备下述前端运行库与有权使用的模型。
+3. 运行 `诊断.cmd`；检查通过后运行 `启动桌宠.cmd`。例如 `启动桌宠.cmd --show-banner`。
+4. 后台启动：`powershell -NoProfile -File .\pet-launcher.ps1`。设置页的桌面快捷方式与可选自启复用该入口，只在使用者明确点击时创建。
 
-依赖安装、下载与桌宠运行均由使用者在本机执行；仓库不携带第三方 DLL、Python 安装包或内嵌浏览器。
+脚本使用项目 `.venv`，不查找 Codex 的内置 Python。也可显式设置 `AGENT_PET_PYTHON` 为自行配置的 Python 绝对路径，再使用 PowerShell 启动器。运行代码后不向源码目录保存用户配置。
 
-## 第三方组件安装
+## 自备模型与前端库
 
-安装 Node.js 后，在本目录的 PowerShell 执行固定版本安装（只需用于准备前端库，运行桌宠不需要 Node）：
+创建 `web/model/`，将自己的 Cubism 3/4 模型完整放入，主 `.model3.json` 以 `settings.json` 命名，保持相对文件引用正确。最小结构参见 `examples/model-settings.example.json`，该示例不是可运行模型。原角色扩展未提供时，设置页禁用该选项。
+
+自备以下本地库；不使用在线 `latest` 脚本：
+
+- `web/lib/pixi-v6.min.js`：PixiJS 6.5.10。
+- `web/lib/pixi-live2d-display-cubism4.min.js`：pixi-live2d-display 0.4.0。
+- `web/lib/live2dcubismcore.min.js`：从 Live2D 官方 SDK 获取与模型兼容的 Core，阅读相应许可。
+
+可使用 npm 准备前两项（只有准备库时需要 Node.js）：
 
 ```powershell
 npm install --ignore-scripts --no-audit --no-fund --no-save --package-lock=false pixi.js@6.5.10 pixi-live2d-display@0.4.0
@@ -30,39 +40,42 @@ Copy-Item node_modules/pixi.js/dist/browser/pixi.min.js web/lib/pixi-v6.min.js
 Copy-Item node_modules/pixi-live2d-display/dist/cubism4.min.js web/lib/pixi-live2d-display-cubism4.min.js
 ```
 
-上游：[PixiJS](https://github.com/pixijs/pixijs/tree/v6.5.10)、[pixi-live2d-display 0.4.0](https://github.com/guansss/pixi-live2d-display/tree/v0.4.0)。PixiJS 使用 MIT；显示适配器包含 Cubism Framework 内容，不能将整个打包文件的所有内容都视作本项目 MIT。请保留下载包中的各项许可证；本模板不代为分发这些库。
+模型的表情名、动作组和道具参数由其作者定义；替换角色后，应调整设置中的表情映射、动作白名单及角色底部交互区。通用快捷工具栏独立于角色的道具按钮。
 
-从 [Live2D 官方 SDK for Web 页面](https://www.live2d.com/en/sdk/download/web/)阅读并接受相应许可，自行取得与 Cubism 4 模型兼容的 `Core/live2dcubismcore.min.js`，复制为 `web/lib/live2dcubismcore.min.js`。Core 不属于本项目 MIT；本模板不自动下载，也不随包提供。请不要使用浮动 `latest` 在线脚本替代本地文件。不同 SDK/Core 版本是否兼容需在用户本机验证。
+## 源码、个人数据与外部工具
 
-## 自备模型
+| 内容 | 保存位置 |
+| --- | --- |
+| 程序、前端与通用界面图形 | 本项目目录 |
+| 用户设置、桌宠位置、设置窗口尺寸、提醒/亲密度、DPAPI 凭据 | `%LOCALAPPDATA%/AgentDesktopPet/` |
+| WebView2 缓存 | 数据目录的 `cache/webview2/` |
+| 运行日志、进程号、退出/清缓存请求、状态桥 | 数据目录；均不进入源码包 |
+| 个人工具中心 | 独立项目，按需配置，不打包或自动打开 |
 
-创建 `web/model/`，放入您有权使用的 Cubism 3/4 模型完整目录（`.moc3`、纹理、动作、表情等）。将模型的 `.model3.json` 复制为该目录下的 `settings.json`，保留其中相对文件路径；无需更改原文件名引用。`web/model-settings.example.json` 仅展示最小结构，**不是可运行模型**。
+运行 `python maintenance.py --paths` 可查看本机实际目录。设置 `AGENT_PET_DATA_DIR` 为与源码目录互不包含的绝对路径，可使用完全独立的测试配置。不要把源码解压进个人数据或缓存目录。单实例锁和快捷方式名称按数据目录区分，与旧安装版分开。
 
-```text
-web/model/
-  settings.json
-  your-model.moc3
-  your-model.cdi3.json         # 可选显示名称；FileReferences.DisplayInfo 指向它
-  textures/texture_00.png
-  ...                        # settings.json 引用的动作、表情等
+移动源码目录会继续使用同一用户数据目录。运行中的数据目录不要手动删除；窗口位置是有用途的偏好，不是缓存。需要重置时先退出桌宠并备份对应 JSON。
+
+工具入口默认为空。将 `assistant_tools.example.json` 复制到数据目录并命名为 `assistant_tools.json`，按需配置 `id="center"`、`kind="app"`、`name`、Python 脚本的绝对 `path` 和准确窗口 `title`。默认不附其他个人软件路径，未配置时界面会提示。
+
+API 额度查询默认关闭。启用 Codex 查询使用当前使用者自行安装、登录的客户端；DeepSeek 密钥由使用者在本机输入并用当前 Windows 用户 DPAPI 加密。密文也属于个人数据，不应分享。状态适配器读取当前用户已有的 Agent 记录，不代表离线模型或不消耗配额。
+
+`status-bridge.py` 与桌宠读取同一个数据目录的 `status/`。示例：
+
+```powershell
+python status-bridge.py --agent demo --state working --title "测试任务"
 ```
 
-原实现对表情名称、`Idle`/`Show` 动作组、角色底部三个交互区及部分道具参数有约定。这些约定保留在 `settings_store.py`、`web/pet.js`、`run.py` 中。替换模型后，可在设置页调整表情映射与动作白名单；没有同名表情/参数时相应互动可能不生效，底部交互区可能需要按新角色调整。快捷栏不依赖角色自带的三个按钮。
+## 维护与诊断
 
-不包含原角色、宝可梦素材、模型贴图、截图或原图标。托盘使用 Windows 系统图标作为缺省值；如需自定义，使用您有权使用的 `web/icon.ico`。
+- `run.py --check`：只检查资源和依赖，不读取 Agent 记录、查询余额或开启窗口。
+- `run.py --paths` / `maintenance.py --paths`：显示本机目录；不要把带个人路径的输出原样提交到公共 issue。
+- `maintenance.py --stop`：只向当前数据配置发送正常退出请求，不强杀进程。
+- 设置中的清缓存只删除已校验的 `cache/webview2/`，等旧进程正常退出后处理；重解析点或未退出的进程会阻止清理。
+- 调用栈快照默认关闭；仅调试时设置 `AGENT_PET_DEBUG_STACKS=1`。日志可能包含任务标题或本机路径，分享前应自行检查。
 
-## 本机数据与可选功能
+## 验证与许可
 
-- 默认读取当前 Windows 用户的 Codex 本地记录，其他 Agent 可在设置中切换。状态适配器依赖上游应用记录格式，版本变化可能影响识别。状态记录、任务标题及用量仅在本机处理；勿将运行后的日志、截图或数据目录提交到公共仓库。
-- 额度查询默认关闭。手动开启 Codex 模式会启动本机已登录 CLI 的 `app-server` 读取额度；DeepSeek 模式只访问 `https://api.deepseek.com/user/balance`，需要在本机 API 设置中自行输入官方密钥。密钥由 Windows DPAPI 绑定当前用户加密；仓库不含密钥或账户配置。
-- 常用工具默认是空列表。复制 `assistant_tools.example.json` 为 `assistant_tools.json`，按需写入您本机的绝对路径：文件夹项为 `id/name/kind="folder"/path`；应用项为 `kind="app"`，另需准确的 `title`，`path` 指向 Python 入口。只添加可信脚本。工具由当前 Python 环境运行，需要自行安装其依赖。
-- 运行后配置、位置、陪伴记录、日志和 WebView2 缓存保存在本目录；用户状态 JSON 全部被 `.gitignore` 排除。更新代码前自行备份。模板单实例锁按安装目录区分，避免与其他目录的桌宠共用锁。
-- 创建桌面快捷方式、开机自启和清缓存由设置页手动操作；后台启动器依赖 `.venv`。清缓存只处理本目录的 `.webview2`。
+本副本完成语法、数据目录隔离、缺资源退出、换目录与静态隐私检查。未在全新 Windows 机器上重新下载依赖、安装模型并执行完整图形端到端测试；第三方图形兼容性仍需使用者本机验证。
 
-## 验证与限制
-
-发布副本经过 Python 语法编译、纯逻辑模块导入与临时目录测试、默认配置检查、缺失模型预检查及文件清单审查。未启动桌宠窗口、未查询账户、未读取真实用户配置；未在干净 Windows 上完成依赖下载及带模型的端到端测试。模型、Core 和 WebView2 的图形兼容性需使用者本机验证。
-
-`诊断.cmd` 仅检查本地资源/依赖，不查询 Agent 或账户。开发调试可运行 `run.py --state-only`，但其输出会包含您本机状态，不要直接发到公共 issue。
-
-源码许可见 [LICENSE](LICENSE)，第三方范围与归属见 [THIRD-PARTY.md](THIRD-PARTY.md)。保留原许可证的作者占位文字，没有据此推定或新增版权人。
+代码许可保留原 [LICENSE](LICENSE)，未替换其作者占位行。第三方和素材边界见 [THIRD-PARTY.md](THIRD-PARTY.md)。通用 SVG 及其 PNG 界面图形属于程序 UI；原角色图片、托盘角色图标与模型未包含。Microsoft WebView2 Runtime：[官方入口](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)；Live2D SDK：[官方入口](https://www.live2d.com/en/sdk/download/web/)。

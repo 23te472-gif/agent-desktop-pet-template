@@ -7,7 +7,7 @@
     python status-bridge.py --agent openclaw --json "{\"state\":\"waiting\",\"title\":\"等你确认\"}"
     python status-bridge.py --agent openclaw --clear
 
-写入 ``~/.codexpet/status/<agent>.json``（先写 .tmp 再原子替换，桌宠不会读到半截文件）。
+写入独立数据目录的 ``status/<agent>.json``（先写 .tmp 再原子替换，桌宠不会读到半截文件）。
 桌宠每秒读一次，取 3 分钟内更新过的那份覆盖在本地记录解析出来的状态上面。
 
 state 取值：idle / thinking / working / waiting / review / syncing / blocked / error / done / interrupted
@@ -22,8 +22,10 @@ import json
 import os
 import re
 import sys
+sys.dont_write_bytecode=True
 
-BRIDGE_DIR = os.path.join(os.path.expanduser("~"), ".codexpet", "status")
+from pet_paths import data_dir
+BRIDGE_DIR = str(data_dir()/"status")
 STATES = (
     "idle", "thinking", "working", "waiting", "review",
     "syncing", "blocked", "error", "done", "interrupted",

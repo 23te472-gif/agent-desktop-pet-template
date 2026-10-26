@@ -8,7 +8,7 @@ DEFAULTS=dict(done=True,waiting=True,sound=False,showTitle=True)
 ACTIVE=frozenset(('thinking','working','review','syncing'))
 # These titles belong to pywebview/WinForms windows. A matching title alone is
 # not trusted: data/instance.json must name the PID that owns the window.
-WEBVIEW_TITLES=frozenset(('个人工具中心 · 2.0',))
+WEBVIEW_TITLES=frozenset(('个人工具中心 · 2.0','宝可梦小镇与专注'))
 
 class ReminderGate:
     def __init__(self,clock=time.monotonic):self.clock=clock;self.contexts=OrderedDict()
@@ -66,6 +66,11 @@ def load_tools(base):
         if entry['kind']=='app' and (not isinstance(entry.get('title'),str) or not entry['title'] or Path(entry['path']).suffix.lower()!='.py'):raise ValueError('工具入口需为本地Python脚本及准确窗口名称')
         ids.add(entry['id'])
     return entries
+
+def open_tool_center(base,launcher):
+    entry=next((item for item in load_tools(base) if item['id']=='center' and item['kind']=='app'),None)
+    if entry is None:raise ValueError('尚未配置工具中心入口，请检查 assistant_tools.json 的 center 项。')
+    return launcher.open(entry)
 
 class ToolWindows:
     def __init__(self):
@@ -130,5 +135,5 @@ class ToolLauncher:
             code=process.poll()
             if code is not None:
                 name=self.entries.pop(key)['name'];self.processes.pop(key,None)
-                messages.append(name+('已关闭。' if code==0 else '启动或运行失败，请打开工具启动日志查看详情。'))
+                messages.append(name+('已关闭。' if code==0 else '启动或运行失败，请检查工具入口配置；诊断已在后台记录。'))
         return messages

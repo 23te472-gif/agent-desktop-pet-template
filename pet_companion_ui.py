@@ -49,32 +49,8 @@ def _settings(host,title,height):
 
 
 def open_companion(host):
-    """Compatibility entry point; only quiet mode settings live here now."""
-    if _existing(host,'companion'):return
-    from System.Windows.Forms import CheckBox,FolderBrowserDialog,DialogResult,MessageBox
-    from pet_quiet import steam_roots
-    form,add,label,button=_settings(host,'游戏安静模式',330)
-    quiet=CheckBox();quiet.Text='游戏全屏时隐藏桌宠并暂停动画';quiet.Checked=host.companion_config['quietEnabled'];add(quiet,36)
-    label('切出全屏后恢复原来的显示状态；手动隐藏的桌宠不会被强行显示。',54)
-    extra=list(host.companion_config['gameRoots'])
-    roots=label('已识别游戏目录：'+str(len(host.game_detector.roots))+' 个',32)
-    def folder():
-        dialog=FolderBrowserDialog();dialog.Description='选择其他游戏的安装目录'
-        try:
-            if dialog.ShowDialog(form)==DialogResult.OK:
-                selected=str(Path(dialog.SelectedPath).resolve())
-                if selected not in extra and len(extra)<12:extra.append(selected)
-                roots.Text='额外目录：'+str(len(extra))+' 个，保存后生效。'
-        finally:dialog.Dispose()
-    button('添加其他游戏目录…',folder)
-    status=label(host.companion_store.error or '自动识别 Steam 游戏库，每2秒检查一次。',42)
-    def save():
-        try:
-            clean=host.companion_store.save(dict(host.companion_config,quietEnabled=bool(quiet.Checked),gameRoots=list(extra)))
-            host.companion_config=clean;host.metric_service.config=clean
-            host.game_detector.roots=steam_roots(clean['gameRoots']);host.update_game_quiet();status.Text='安静模式已保存并应用。'
-        except (OSError,ValueError) as exc:MessageBox.Show(form,str(exc),'设置未保存')
-    button('保存并应用',save);_attach(host,'companion',form)
+    """Compatibility entry: game quiet now lives in the unified DND panel."""
+    host.open_buddy_dnd()
 
 
 def open_api_settings(host):
@@ -100,7 +76,7 @@ def open_api_settings(host):
     button('保存密钥设置',save);_attach(host,'metric-key',form)
 
 
-def open_metric_card(host,toggle=False):
+def _open_native_metric_card(host,toggle=False):
     old=host.assistant_panels.get('metric-card')
     if old is not None and not old.IsDisposed:
         if toggle:old.Close()
@@ -111,25 +87,44 @@ def open_metric_card(host,toggle=False):
     from System.Windows.Forms import (Form,FormBorderStyle,AutoScaleMode,Screen,Label,Button,Timer,
         FormStartPosition,MessageBox,FlatStyle,ContextMenuStrip,ToolStripMenuItem,ToolStripSeparator,ToolTip,MouseButtons,Cursor)
     scale=max(1,float(getattr(host,'dpi_scale',1)));px=lambda n:round(n*scale)
-    bg=Color.FromArgb(248,252,250);ink=Color.FromArgb(32,62,53);muted=Color.FromArgb(99,123,114)
+    bg=Color.FromArgb(27,30,38);ink=Color.White;muted=Color.FromArgb(228,231,237)
     form=Form();form.Text='额度浮窗 · Agent 桌宠';form.AutoScaleMode=getattr(AutoScaleMode,'None')
     form.FormBorderStyle=getattr(FormBorderStyle,'None');form.ShowInTaskbar=False
-    form.StartPosition=FormStartPosition.Manual;form.Font=Font('Microsoft YaHei UI',9)
+    from pet_typography import rounded_font
+    form.StartPosition=FormStartPosition.Manual;form.Font=rounded_font(9.5)
     form.BackColor=bg;form.ForeColor=ink;form.TopMost=bool(host.settings.get('alwaysOnTop',True))
-    form.ClientSize=Size(px(280),px(112))
+    form.ClientSize=Size(px(280),px(68))
     area=Screen.FromControl(host.form).WorkingArea
     form.Location=Point(max(area.Left,area.Right-form.Width-px(22)),max(area.Top,area.Bottom-form.Height-px(22)))
-    path=GraphicsPath();r=px(18);w=form.Width;h=form.Height
+    path=GraphicsPath();r=px(60);w=form.Width;h=form.Height
     for rect,start in (((0,0,r,r),180),((w-r,0,r,r),270),((w-r,h-r,r,r),0),((0,h-r,r,r),90)):
         path.AddArc(*rect,start,90)
     path.CloseFigure();region=Region(path);form.Region=region;path.Dispose()
+    def paint_bubble(sender,event):
+        from pet_native_style import shape
+        from System.Drawing.Drawing2D import SmoothingMode
+        event.Graphics.SmoothingMode=SmoothingMode.AntiAlias
+        shape(event.Graphics,(.5,.5,float(form.Width-1),float(form.Height-1)),px(30),bg,Color.FromArgb(58,62,73))
+    form.Paint+=paint_bubble
     def label(name,text,x,y,w,h,size,color,bold=False):
         item=Label();item.Name=name;item.Text=text;item.Location=Point(px(x),px(y));item.Size=Size(px(w),px(h))
-        item.Font=Font('Microsoft YaHei UI',size,FontStyle.Bold if bold else FontStyle.Regular)
-        item.ForeColor=color;item.AutoEllipsis=True;form.Controls.Add(item);return item
-    heading=label('source','●  Codex',14,11,196,21,9,muted)
-    summary=label('remaining','正在查询…',14,37,252,30,12,ink,True)
-    detail=label('reset','',14,76,252,24,9,muted)
+        item.Font=rounded_font(size,bold)
+        item.ForeColor=color;item.AutoEllipsis=True;form.Controls.Add(item)
+        from pet_native_style import decorate_label
+        decorate_label(item);return item
+    dot=label('status-dot','',14,9,12,21,9,Color.FromArgb(61,213,139))
+    def paint_dot(sender,event):
+        from System.Drawing import SolidBrush
+        from System.Drawing.Drawing2D import SmoothingMode
+        event.Graphics.SmoothingMode=SmoothingMode.AntiAlias
+        brush=SolidBrush(dot.ForeColor)
+        try:event.Graphics.FillEllipse(brush,0,px(6),px(7),px(7))
+        finally:brush.Dispose()
+    dot.Paint+=paint_dot;dot.AccessibleName='额度状态'
+    heading=label('source','Codex',30,11,180,21,9,ink)
+    heading.Visible=False
+    summary=label('remaining','正在查询…',30,9,232,24,10.5,ink,True)
+    detail=label('reset','',30,37,232,21,9,muted)
     tip=ToolTip();tip.AutoPopDelay=15000;tip.InitialDelay=400;tip.ReshowDelay=150
     menu=ContextMenuStrip();menu.Font=form.Font
     def action(text,fn):
@@ -147,15 +142,26 @@ def open_metric_card(host,toggle=False):
     menu.Items.Add(ToolStripSeparator())
     action('完整额度与更新时间…',lambda:MessageBox.Show(form,host.metric_service.text(detailed=True),'额度详情'))
     action('API 设置…',lambda:open_api_settings(host))
+    action('关闭额度气泡',form.Close)
     from pet_theme import theme_menu
     theme_menu(menu,scale)
     form.ContextMenuStrip=menu
     def small_button(text,x,fn):
-        item=Button();item.Text=text;item.Size=Size(px(23),px(23));item.Location=Point(px(x),px(8))
+        item=Button();item.Text=text;item.Size=Size(px(23),px(23));item.Location=Point(px(x),px(35))
         item.FlatStyle=FlatStyle.Flat;item.FlatAppearance.BorderSize=0;item.ForeColor=muted
+        item.FlatAppearance.MouseOverBackColor=Color.FromArgb(36,41,50)
+        item.FlatAppearance.MouseDownBackColor=Color.FromArgb(52,58,70)
         item.BackColor=bg;item.TabStop=False;item.Click+=lambda sender,args:fn();form.Controls.Add(item);return item
     more=small_button('⋯',221,lambda:menu.Show(form,Point(px(140),px(31))))
     close=small_button('×',247,form.Close);tip.SetToolTip(more,'刷新、切换来源和设置');tip.SetToolTip(close,'关闭；可从桌宠右键菜单重新打开')
+    more.Visible=False;close.Visible=False
+    def hover_tools(sender=None,args=None):
+        if form.IsDisposed:return
+        inside=form.Bounds.Contains(Cursor.Position)
+        more.Visible=inside;close.Visible=inside
+        detail.Width=px(180 if inside else 232)
+    for item in (form,dot,summary,detail,more,close):
+        item.MouseEnter+=hover_tools;item.MouseLeave+=hover_tools
     # Dragging the card uses managed mouse capture, without a system title bar.
     drag={}
     def down(sender,e):
@@ -166,7 +172,7 @@ def open_metric_card(host,toggle=False):
             pos=Cursor.Position;start=drag['cursor'];origin=drag['origin']
             form.Location=Point(origin.X+pos.X-start.X,origin.Y+pos.Y-start.Y)
     def up(sender,e):sender.Capture=False;drag.clear()
-    for item in (form,heading,summary,detail):
+    for item in (form,dot,heading,summary,detail):
         item.MouseDown+=down;item.MouseMove+=move;item.MouseUp+=up
     def update(sender=None,args=None):
         mode=host.companion_config['metricMode'];full=host.metric_service.text(detailed=True)
@@ -178,9 +184,10 @@ def open_metric_card(host,toggle=False):
         if busy:description='正在刷新…'
         import time
         warning=mode=='codex' and time.monotonic()<getattr(host,'quota_warning_until',0)
-        heading.Text='●  '+('额度不足提醒' if warning else {'codex':'Codex','deepseek':'DeepSeek API','off':'额度已关闭'}[mode])
-        summary.ForeColor=Color.FromArgb(161,91,19) if warning else ink
-        if summary.Text!=headline:summary.Text=headline
+        heading.Text='额度不足提醒' if warning else {'codex':'Codex','deepseek':'DeepSeek API','off':'额度已关闭'}[mode]
+        summary.ForeColor=ink
+        bubble_text=heading.Text+' · '+headline
+        if summary.Text!=bubble_text:summary.Text=bubble_text
         if detail.Text!=description:detail.Text=description
         for item in (heading,summary,detail):tip.SetToolTip(item,full)
         refresh.Enabled=not busy
@@ -190,3 +197,8 @@ def open_metric_card(host,toggle=False):
         tip.Dispose();menu.Dispose();region.Dispose()
     form.FormClosed+=cleanup
     _attach(host,'metric-card',form,timer);host.metric_service.refresh()
+
+
+def open_metric_card(host,toggle=False):
+    from pet_metric_bubble import open_metric_bubble
+    return open_metric_bubble(host,toggle=toggle)

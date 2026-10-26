@@ -143,6 +143,23 @@ let model = null;
 let idleTimer = 0;
 let moodTimer = 0;
 let expressionCursor = 0;
+let appearanceSwitcher = null;
+let legacyExpressionNames = [];
+let bootReady = false;
+let initialSettingsResolve = null;
+
+function selectAppearance() {
+  if (!bootReady || !appearanceSwitcher) return;
+  const id = state.settings && state.settings.petAppearance === "dragon" ? "dragon" : "legacy";
+  if (appearanceSwitcher.requested !== id) appearanceSwitcher.select(id);
+}
+
+function restoreCurrentExpression() {
+  state.expression = null;
+  const expression = exprFor(state.key);
+  if (expression) setExpression(expression);
+  else resetExpression();
+}
 
 function exprFor(key) {
   const custom = state.settings && state.settings.expressions;
@@ -155,6 +172,7 @@ function exprFor(key) {
 /* 表情白名单：被用户关掉的表情一律不出现（状态映射、随机心情、点击反应都走这里） */
 function expressionAllowed(name) {
   if (!name) return false;
+  if (model && model.appearanceId === "dragon" && !model.supportsExpression(name)) return false;
   const list = state.settings && Array.isArray(state.settings.expressionAllowed) ? state.settings.expressionAllowed : ["*"];
   return list.includes("*") || list.includes(name);
 }
@@ -211,6 +229,8 @@ function countFrame() {
 
 function applySettings(cfg) {
   state.settings = cfg || {};
+  if (initialSettingsResolve) { initialSettingsResolve(); initialSettingsResolve = null; }
+  selectAppearance();
   applyFpsLimit();
   refreshPlaybackPolicy();
   const style = (cfg && cfg.cardStyle) === "solid" ? "style-solid" : "style-glass";
@@ -245,6 +265,7 @@ function resetExpression() {
 
 /** 设置变化时立即收敛播放状态：关闭自动动作时要停掉正在循环的旧动作。 */
 function refreshPlaybackPolicy() {
+  if(model && model.configure) model.configure(state.settings || {});
   const cfg = motionConfig();
   if (!cfg.autoMotion || !allowedIndices("Idle").length) stopAllMotions();
   else scheduleIdle();
@@ -309,10 +330,41 @@ async function boot() {
   document.body.insertBefore(app.view, document.body.firstChild);
   applyFpsLimit();          // 帧率上限由设置决定（默认 60 帧；见下面的 applyFpsLimit）
 
-  model = await PIXI.live2d.Live2DModel.from("model/settings.json", { autoInteract: false });
-  app.stage.addChild(model);
-  installPlaybackGuards();
-  installParamBlockPatch();
+  // Ask for saved appearance before loading either model. A standalone browser
+  // has no host, so it falls back to the original appearance after a short wait.
+  if (bridge.live && !state.settings) {
+    const initialSettings = new Promise(resolve => { initialSettingsResolve = resolve; setTimeout(resolve, 1200); });
+    bridge.send({t:"hello"});
+    await initialSettings;
+  }
+  const inventory = await fetch("model/settings.json").then(r => {if (!r.ok) throw Error("模型清单读取失败"); return r.json();});
+  legacyExpressionNames = (inventory.FileReferences.Expressions || []).map(item => item.Name);
+  appearanceSwitcher = new PetAppearance.Switcher(
+    async id => id === "dragon" ? PetAppearance.createDragon() : PIXI.live2d.Live2DModel.from("model/settings.json", { autoInteract: false }),
+    (next, id, old) => {
+      if (old) app.stage.removeChild(old);
+      model = next; app.stage.addChild(model);
+      state.playbackGuardInstalled = false;
+      if (model.configure) model.configure(state.settings || {});
+      installPlaybackGuards();
+      if (id === "legacy") installParamBlockPatch();
+      if (model.setStatus) model.setStatus(state.key).catch(console.warn);
+      restoreCurrentExpression();
+      state.tempExpr = null; state.tempUntil = 0; state.expressionHistory = [];
+      state.lastMotion = null; layout();
+      bridge.send({ t: "ready", expressions: legacyExpressionNames });
+    },
+    (error, id) => {
+      console.warn("appearance load failed", error);
+      toast("形象加载失败，已保留原形象；可在设置切回旧版", 5000);
+      bridge.send({t:"error", message:"appearance " + id + ": " + String(error)});
+    }
+  );
+  const wanted = state.settings && state.settings.petAppearance === "dragon" ? "dragon" : "legacy";
+  if (!await appearanceSwitcher.select(wanted) && !model) await appearanceSwitcher.select("legacy");
+  if (!model) throw Error("没有可用的桌宠形象");
+  bootReady = true;
+  selectAppearance();
   layout();
   window.addEventListener("resize", () => {
     app.renderer.resize(window.innerWidth, window.innerHeight);
@@ -342,7 +394,7 @@ async function boot() {
   }
   wireInteractions();
   reportHitbox();
-  bridge.send({ t: "ready", expressions: expressionNames() });
+  bridge.send({ t: "ready", expressions: legacyExpressionNames });
 }
 
 /** 被屏蔽的道具参数每帧强制归零。
@@ -416,15 +468,25 @@ function layout() {
   if (!model) return;
   const w = window.innerWidth;
   const h = window.innerHeight;
+  const dragon = model.appearanceId === "dragon";
+  ui.chip.classList.toggle("dragon-status", dragon);
+  // PNG art fills its lower bounds, unlike the original Live2D texture.
+  // Reserve a stable footer even while idle so the badge never covers the board
+  // and task transitions do not move the character or its native hit regions.
+  const chipEnabled = !state.settings || state.settings.showChip !== false;
+  const statusFooter = dragon && chipEnabled ? 32 + 6 + 8 : 0;
   const maxW = w * 0.96;
   const gap = cardGap();                       // 卡片与角色头顶的间距（CSS 像素，固定值）
   const cardOpen = state.cardOpen && ui.card && !ui.card.classList.contains("hidden");
   const cardH = cardOpen ? ui.card.getBoundingClientRect().height : 0;
-  const maxH = Math.max(80, h - cardH - gap - 16);
+  const maxH = Math.max(80, h - cardH - gap - 16 - statusFooter);
   const scale = Math.min(maxW / model.internalModel.width, maxH / model.internalModel.height);
   model.scale.set(scale);
   model.x = (w - model.width) / 2;
-  model.y = h - model.height;
+  model.y = h - statusFooter - model.height;
+  ui.toast.classList.toggle("dragon-status", dragon);
+  ui.toast.style.bottom = dragon ? `${Math.max(6, h - model.y + 8)}px` : "";
+  ui.toast.style.maxHeight = dragon ? `${Math.max(24, model.y - 16)}px` : "";
   // 卡片贴着"角色头顶"放：桌宠放大缩小时，这段距离保持不变（以前贴窗口顶部，
   // 一放大中间就空出一大段，看着像飘走了）
   if (cardOpen) {
@@ -457,6 +519,7 @@ function characterRect() {
 function reportHitbox() {
   bridge.send({
     t: "size",
+    appearance: model && model.appearanceId === "dragon" ? "dragon" : "legacy",
     rect: characterRect(),
     headRect: headRect(),
     dpr: window.devicePixelRatio || 1,
@@ -591,6 +654,7 @@ function gazeRange() {
 function onCursor(data) {
   if (!data) return;
   state.cursor = data;
+  if(model && model.setPointer) model.setPointer(data);
   const now = Date.now();
   if (data.inside) {
     if (!state.hoverSince) state.hoverSince = now;
@@ -618,6 +682,7 @@ function onCursor(data) {
       再走一段缓入缓出的回正动画，收尾是慢下来的，不会"啪"地弹回去。 */
 function updateGaze() {
   if (!model) return;
+  if (model.appearanceId === "dragon") return;
   const g = state.gaze;
   const now = performance.now();
   const dt = clamp(((now - state.gazeAt) || 0) / 1000, 0, GAZE_MAX_STEP);
@@ -782,6 +847,8 @@ function applyState(payload) {
   const style = STATE_STYLE[payload.state] || STATE_STYLE.idle;
   const changed = payload.state !== state.key;
   state.key = payload.state;
+  if (changed) state.expression = null;
+  if (changed && model && model.setStatus) model.setStatus(state.key).catch(console.warn);
 
   ui.chipText.textContent = payload.label || style.label;
   ui.chipDot.style.background = style.color;
@@ -1006,26 +1073,28 @@ function reportProbe(over, alpha) {
 }
 
 function reaction(kind, text, feedback = true) {
+  const liveReaction=Boolean(model && model.playInteraction);
   if (kind === "pat") {
     setTempExpression(pickAllowed(PAT_MOODS), 3.0);
-    playMotion("Tap");
+    if(!liveReaction) playMotion("Tap");
     if (feedback) toast(text || "摸摸头～");
   } else if (kind === "poke") {
     setTempExpression(pickAllowed(POKE_MOODS), 2.6);
-    playMotion(Math.random() < 0.5 ? "Tap" : "Show");
+    if(!liveReaction) playMotion(Math.random() < 0.5 ? "Tap" : "Show");
     if (feedback && text) toast(text);
   } else if (kind === "drag") {
     state.dragged = true;
     setTempExpression(pickAllowed(DRAG_MOODS), 8);
-    playMotion("Tap");
+    if(!liveReaction) playMotion("Tap");
   } else if (kind === "drop") {
     state.dragged = false;
     setTempExpression(pickAllowed(DROP_MOODS), 3.4);
-    playMotion(Math.random() < 0.5 ? "Show" : "Tap");
+    if(!liveReaction) playMotion(Math.random() < 0.5 ? "Show" : "Tap");
   } else if (kind === "motion") {
-    playMotion(Math.random() < 0.5 ? "Tap" : "Show");
+    if(!liveReaction) playMotion(Math.random() < 0.5 ? "Tap" : "Show");
     setTempExpression(pickAllowed(MOOD_POOLS[state.key] || MOOD_POOLS.idle), 4);
   }
+  if(liveReaction) model.playInteraction(kind);
 }
 
 function cycleExpression() {
@@ -1080,6 +1149,9 @@ bridge.onMessage((raw) => {
   if (msg.t === "status-request") bridge.send({ t: "status", data: window.__pet.getStatus() });
   if (msg.t === "snapshot-request") {
     try {
+      // WebGL does not preserve the drawing buffer between frames. Render now
+      // so native verification captures the visible pet instead of empty alpha.
+      if (app && model) app.renderer.render(app.stage);
       const canvas = canvasElement();
       const url = canvas ? canvas.toDataURL("image/png") : "";
       bridge.send({ t: "snapshot", data: url });
@@ -1178,6 +1250,8 @@ window.__pet = {
   model: () => model,
   app: () => app,
   getStatus: () => ({
+    appearance: appearanceSwitcher ? appearanceSwitcher.currentId : null,
+    appearanceRequested: appearanceSwitcher ? appearanceSwitcher.requested : null,
     state: state.key,
     label: STATE_STYLE[state.key] ? STATE_STYLE[state.key].label : state.key,
     expression: state.expression,
@@ -1190,6 +1264,7 @@ window.__pet = {
       : null,
     rect: characterRect(),
     modelLoaded: !!model,
+    animation: model && model.getAnimationStatus ? model.getAnimationStatus() : null,
     modelSize: model ? [model.width, model.height] : null,
     expressions: expressionNames(),
     chip: ui.chipText.textContent,

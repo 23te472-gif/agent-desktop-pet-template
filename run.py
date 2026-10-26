@@ -8,6 +8,10 @@
 """
 
 from __future__ import annotations
+import sys
+sys.dont_write_bytecode=True
+
+from pet_agent_reminders import selected_agent,selected_items,selected_unread,normalize_agent,agent_name
 
 import argparse
 import base64
@@ -33,19 +37,19 @@ from pet_quiet import GameDetector,QuietState
 from pet_balances import MetricService
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-def webview_library_dir():
-    # Locate the user-installed package without importing its GUI backend.
-    import importlib.util
-    spec = importlib.util.find_spec("webview")
-    if spec is None or not spec.origin:
-        raise RuntimeError("请先运行 安装依赖.cmd 安装 pywebview")
-    return os.path.join(os.path.dirname(spec.origin), "lib")
+from pet_paths import data_dir,cache_dir,mutex_name,shortcut_path
+DATA = str(data_dir())
 
+def webview_library_dir():
+    import importlib.util
+    spec=importlib.util.find_spec('webview')
+    if spec is None or not spec.origin:raise RuntimeError('请先安装 requirements.txt 中的 pywebview')
+    return os.path.join(os.path.dirname(spec.origin),'lib')
 WEB = os.path.join(HERE, "web")
-POSITION_FILE = os.path.join(HERE, "pet_position.json")
-SETTINGS_WINDOW_FILE = os.path.join(HERE, "settings_window.json")   # 设置窗口的大小/位置
-PID_FILE = os.path.join(HERE, "pet.pid")
-STOP_FILE = os.path.join(HERE, "stop.request")
+POSITION_FILE = os.path.join(DATA, "pet_position.json")
+SETTINGS_WINDOW_FILE = os.path.join(DATA, "settings_window.json")   # 设置窗口的大小/位置
+PID_FILE = os.path.join(DATA, "pet.pid")
+STOP_FILE = os.path.join(DATA, "stop.request")
 
 # 「切到 Agent 窗口」用的匹配规则：先认进程名（原生 exe 能直接找到），
 # 再认标题关键词（node 系的 CLI 跑在终端里，窗口属于终端进程，只能靠标题/进程树认）。
@@ -190,7 +194,7 @@ SWP_NOACTIVATE = 0x0010
 REPAIR_SCHEDULE_MS = (30, 30, 40, 60, 90, 130, 180, 250, 340)
 # 上一版的做法：6 次固定 50ms、不抖窗口。放一个标记文件就退回它（见 repair_schedule）
 REPAIR_SCHEDULE_LEGACY_MS = (50,) * 6
-REPAIR_LEGACY_FLAG = os.path.join(HERE, "黑边修复-用旧版.txt")
+REPAIR_LEGACY_FLAG = os.path.join(DATA, "黑边修复-用旧版.txt")
 REPAIR_KEEP_SECONDS = 3.0  # 这一段内的尺寸变化都算"同一次缩放"，并成一块一起刷
 
 
@@ -231,7 +235,7 @@ user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
 user32.UnhookWindowsHookEx.restype = wt.BOOL
 
 log_lock = threading.Lock()      # 保留给外部（现在写盘由专门的线程串行做）
-log_path = os.path.join(HERE, "pet.log")
+log_path = os.path.join(DATA, "pet.log")
 LOG_MAX_BYTES = 512 * 1024     # 超过 512KB 就只保留最近 300 行
 _log_size = 0
 _log_queue: "queue.Queue" = queue.Queue()
@@ -295,12 +299,12 @@ def install_stack_dumps() -> None:
     代价：解释器彻底卡到跑不了 Python 代码时写不出快照（那种场面交给鼠标看门狗兜底）。
     每次启动重写（只保留本次运行），想关掉就设环境变量 CODEXPET_NO_STACKDUMP=1。
     """
-    if os.environ.get("CODEXPET_NO_STACKDUMP"):
+    if not os.environ.get("AGENT_PET_DEBUG_STACKS") or os.environ.get("CODEXPET_NO_STACKDUMP"):
         return
     try:
         import traceback
 
-        handle = open(os.path.join(HERE, "pet-stacks.log"), "w", encoding="utf-8", buffering=1)
+        handle = open(os.path.join(DATA, "pet-stacks.log"), "w", encoding="utf-8", buffering=1)
 
         def dump_once() -> None:
             names = {t.ident: t.name for t in threading.enumerate()}
@@ -396,15 +400,7 @@ def fit_window_rect(area, x, y, width, height, min_w: int = 520, min_h: int = 52
 
 
 def startup_link_path() -> str:
-    return os.path.join(
-        os.environ.get("APPDATA", ""),
-        "Microsoft",
-        "Windows",
-        "Start Menu",
-        "Programs",
-        "Startup",
-        "CodexPet.lnk",
-    )
+    return str(shortcut_path('startup'))
 
 
 def desktop_dir() -> str:
@@ -432,7 +428,7 @@ def desktop_dir() -> str:
 
 
 def desktop_link_path() -> str:
-    return os.path.join(desktop_dir(), "Agent 桌宠.lnk")
+    return str(shortcut_path('desktop'))
 
 
 def desktop_link_exists() -> bool:
@@ -623,7 +619,7 @@ def single_instance() -> bool:
     """二开一次就够：桌宠已经在跑时，再启动直接退出。"""
     global _singleton_handle
     kernel32.CreateMutexW.restype = ctypes.c_void_p
-    _singleton_handle = kernel32.CreateMutexW(None, False, "AgentPet.Template." + __import__("hashlib").sha256(HERE.encode("utf-8")).hexdigest()[:20])
+    _singleton_handle = kernel32.CreateMutexW(None, False, mutex_name())
     return ctypes.get_last_error() != 183  # ERROR_ALREADY_EXISTS
 
 
@@ -877,13 +873,13 @@ class PetHost:
         self.inline_card_open = bool((self.settings or {}).get("cardOpen", False))
         self.card_want_visible = False
         self.last_payload = None
-        self.assistant_base = HERE
-        self.assistant_store = AssistantStore(HERE)
+        self.assistant_base = DATA
+        self.assistant_store = AssistantStore(DATA)
         self.assistant_settings = self.assistant_store.load()
         self.assistant_gate = ReminderGate()
-        self.assistant_launcher = ToolLauncher(HERE)
+        self.assistant_launcher = ToolLauncher(DATA)
         self.assistant_panels = {}
-        self.buddy = BuddyStore(HERE)
+        self.buddy = BuddyStore(DATA)
         if not self.assistant_settings.get("showTitle", True):
             try:
                 self.buddy.hide_titles()
@@ -893,11 +889,11 @@ class PetHost:
         self.quiet_since = 0.0
         self.pending_buddy_summary = ""
         self._buddy_error_shown = False
-        self.companion_store = CompanionStore(HERE)
+        self.companion_store = CompanionStore(DATA)
         self.companion_config = self.companion_store.load()
         self.metric_service = MetricService(self.companion_config)
         from pet_quota_alerts import LowQuotaAlerts
-        self.quota_alerts = LowQuotaAlerts(HERE)
+        self.quota_alerts = LowQuotaAlerts(DATA)
         self.quota_warning_until = 0.0
         self.game_detector = GameDetector(self.companion_config['gameRoots'])
         self.quiet_state = QuietState()
@@ -1128,7 +1124,7 @@ class PetHost:
         from Microsoft.Web.WebView2.WinForms import CoreWebView2CreationProperties
 
         props = CoreWebView2CreationProperties()
-        props.UserDataFolder = os.path.join(HERE, ".webview2")
+        props.UserDataFolder = str(cache_dir())
         props.AdditionalBrowserArguments = (
             "--disable-features=ElasticOverscroll,CalculateNativeWinOcclusion"
             " --disable-background-timer-throttling"
@@ -1347,7 +1343,10 @@ class PetHost:
         except Exception:
             return
         kind = msg.get("t")
-        if kind == "size":
+        if kind == "hello":
+            self.push_settings()
+        elif kind == "size":
+            self.render_appearance = "dragon" if msg.get("appearance") == "dragon" else "legacy"
             rect = msg.get("rect") or [0, 0, 0, 0]
             head = msg.get("headRect") or None
             dpr = float(msg.get("dpr") or 1.0)
@@ -1671,7 +1670,7 @@ class PetHost:
                 if rect.left <= xy[0] < rect.right and rect.top <= xy[1] < rect.bottom:
                     return True
         box = self._menu_rect
-        if box and box[0] <= xy[0] < box[2] and box[1] <= xy[1] < box[3]:
+        if self.menu_contains_point(xy):
             return True
         try:
             owner = user32.WindowFromPoint(wt.POINT(int(xy[0]), int(xy[1])))
@@ -1839,12 +1838,14 @@ class PetHost:
             return None
         fx = (local_x - rx) / rw
         fy = (local_y - ry) / rh
-        dy = fy - TOOL_MARK_Y
+        dragon = getattr(self, "render_appearance", "legacy") == "dragon"
+        marks = (("undo", 0.277), ("pencil", 0.389), ("eraser", 0.502)) if dragon else TOOL_MARK_X
+        dy = fy - (0.85 if dragon else TOOL_MARK_Y)
         if dy < -TOOL_MARK_HALF_Y_UP or dy > TOOL_MARK_HALF_Y_DOWN:
             return None
         best = None
         best_dx = TOOL_MARK_HALF_X
-        for name, mark_x in TOOL_MARK_X:
+        for name, mark_x in marks:
             dx = abs(fx - mark_x)
             if dx <= best_dx:
                 best, best_dx = name, dx
@@ -1991,7 +1992,7 @@ class PetHost:
                 if wparam == WM_LBUTTONDOWN and self._menu_visible:
                     xy = self._cursor_xy()
                     box = self._menu_rect
-                    inside = bool(xy and box and box[0] <= xy[0] < box[2] and box[1] <= xy[1] < box[3])
+                    inside = self.menu_contains_point(xy)
                     if xy and not inside:
                         self._ignore_click_until = time.time() + 0.4   # 这一下点击别再触发底层按钮
                         user32.ReleaseCapture()          # 先放开捕获：这一次左键就不会被菜单吃掉
@@ -2691,6 +2692,17 @@ class PetHost:
         # 每次关闭都记一笔（含原因和存活时长）：排查"悬停不亮"这类生命周期问题用
         log("右键菜单已关闭（%s，存活 %.2fs%s）" % (reason, alive, "，很快就关了" if 0 < alive < 0.6 else ""))
 
+    def menu_contains_point(self, xy):
+        """Match the banner's disjoint native Region, including circle corners."""
+        controller = getattr(self, '_banner_controller', None)
+        if controller is not None and hasattr(controller, 'contains_screen_point'):
+            try:
+                return bool(self._menu_visible and controller.contains_screen_point(xy))
+            except Exception:
+                return False
+        box = self._menu_rect
+        return bool(xy and box and box[0] <= xy[0] < box[2] and box[1] <= xy[1] < box[3])
+
     def menu_screen_rect(self):
         """菜单当前的屏幕矩形（菜单是顶层弹出窗口，Bounds 就是屏幕坐标）。"""
         try:
@@ -3121,7 +3133,7 @@ class PetHost:
                 from System.Windows.Forms import ContextMenuStrip, NotifyIcon, ToolStripMenuItem
 
                 tray = NotifyIcon()
-                tray.Icon = Icon(os.path.join(WEB, "icon.ico")) if os.path.isfile(os.path.join(WEB, "icon.ico")) else SystemIcons.Application
+                tray.Icon = Icon(os.path.join(WEB, "icon.ico")) if os.path.isfile(os.path.join(WEB,"icon.ico")) else SystemIcons.Application
                 tray.Text = "Agent 桌宠"
                 menu = ContextMenuStrip()
                 show_item = ToolStripMenuItem("显示桌宠")
@@ -3146,7 +3158,7 @@ class PetHost:
         self.form.Hide()
         self.tray_icon.Visible = True
         self.update_buddy_badge()
-        count = self.buddy.unread_count()
+        count = selected_unread(self)
         if count and not self.buddy.dnd_active():
             try:
                 from System.Windows.Forms import ToolTipIcon
@@ -3181,7 +3193,7 @@ class PetHost:
         tray = getattr(self, "tray_icon", None)
         if tray is None:return
         try:
-            count = self.buddy.unread_count() if getattr(self, "buddy", None) else 0
+            count = selected_unread(self) if getattr(self, "buddy", None) else 0
             tray.Text = ("Agent 桌宠" + (" · %d 条未读" % count if count else ""))[:63]
         except Exception:
             pass
@@ -3219,20 +3231,41 @@ class PetHost:
             self._buddy_write_failed(exc)
             return None
 
-    def show_buddy_summary(self, text: str) -> None:
+    def show_buddy_summary(self, text: str, items=None) -> None:
         if not text:return
         if self.form is None or self.form.IsDisposed:return
+        previous_ids = getattr(self, 'pending_buddy_item_ids', None)
+        pending_ids = set(previous_ids or ())
+        had_pending_items = previous_ids is not None
+        if items is not None:
+            scoped=selected_items(self,items)
+            if len(scoped)!=len(items):text=agent_name(selected_agent(self))+'：安静期间共有 %d 条未读提醒。'%len(scoped)
+            pending_ids.update(item['id'] for item in scoped)
+        if pending_ids:
+            # Bound retained IDs to the inbox and exclude reminders read or removed
+            # while either quiet mode was active. No extra message text is retained.
+            unread_ids = {item['id'] for item in selected_items(self) if not item['read']}
+            pending_ids.intersection_update(unread_ids)
+        self.pending_buddy_item_ids = pending_ids if items is not None or had_pending_items else None
         if self.quiet_state.active or self.buddy.dnd_active() or not self.pet_is_visible():
             self.pending_buddy_summary = text
             self.update_buddy_badge()
             return
+        if had_pending_items or items is not None:
+            if not pending_ids:
+                self.pending_buddy_summary = ''
+                self.pending_buddy_item_ids = None
+                return
+            if had_pending_items:
+                text = '安静结束：共有 %d 条未读提醒，可在“提醒收件箱”查看。' % len(pending_ids)
         self.pending_buddy_summary = ""
+        self.pending_buddy_item_ids = None
         self.post({"t": "say", "text": text, "duration": 9000, "reminder": True})
 
     def consume_quota_for_summary(self, summary) -> None:
         if self.companion_config.get("metricMode") != "codex":return
         try:
-            self.quota_alerts.acknowledge([item.get("key", "") for item in summary.get("items", []) if item.get("kind") == "quota"])
+            self.quota_alerts.acknowledge([item.get("key", "") for item in selected_items(self,summary.get("items", [])) if item.get("kind") == "quota"])
         except Exception as exc:  # noqa: BLE001
             log("额度提醒汇总标记失败：%r" % (exc,))
 
@@ -3245,7 +3278,7 @@ class PetHost:
                 # DND summary supersedes a pending game-quiet summary collected
                 # during the same period; it is still one message.
                 self.pending_buddy_summary = ""
-                self.show_buddy_summary(summary["text"])
+                self.show_buddy_summary(summary["text"], summary['items'])
             elif getattr(self, "pending_buddy_summary", "") and not self.buddy.dnd_active() and not self.quiet_state.active and self.pet_is_visible():
                 self.show_buddy_summary(self.pending_buddy_summary)
             self.update_buddy_badge()
@@ -3266,12 +3299,11 @@ class PetHost:
             from pet_buddy_ui import open_dnd
             open_dnd(self)
         except Exception as exc:  # noqa: BLE001
-            log("打开临时勿扰面板失败：%r" % (exc,))
-            self.post({"t": "say", "text": "临时勿扰面板未能打开，请查看桌宠日志。"})
+            log("打开勿扰面板失败：%r" % (exc,))
+            self.post({"t": "say", "text": "勿扰面板未能打开，请稍后重试。"})
 
     def interaction_feedback_allowed(self) -> bool:
         if self.quiet_state.active or not self.pet_is_visible():return False
-        if self.buddy.dnd_active():return False
         state = str((self.last_payload or {}).get("state") or "")
         if state in ("thinking", "working", "review", "syncing", "waiting"):return False
         if time.monotonic() < getattr(self, "quota_warning_until", 0):return False
@@ -3360,7 +3392,7 @@ class PetHost:
                 summary = buddy.summary_since(since)
                 if summary['count']:
                     self.consume_quota_for_summary(summary)
-                    self.show_buddy_summary('游戏期间收到 %d 条提醒，右键 → 提醒收件箱' % summary['count'])
+                    self.show_buddy_summary('游戏期间收到 %d 条提醒，右键 → 提醒收件箱' % summary['count'], summary['items'])
             else:
                 notice = self.quiet_pending_notice; self.quiet_pending_notice = None
                 if notice and time.monotonic() - notice[1] < 600:self.show_assistant_notification(notice[0])
@@ -3372,7 +3404,7 @@ class PetHost:
             open_panel(self, kind)
         except Exception as exc:
             log("打开桌宠助手面板失败：%r" % (exc,))
-            self.post({"t": "say", "text": "面板未能打开，请查看桌宠日志。"})
+            self.post({"t": "say", "text": "工具中心未能打开，请检查工具入口配置。" if kind == "tools" else "面板未能打开，请稍后重试。"})
 
     def show_assistant_notification(self, event) -> None:
         if self.form is None or self.form.IsDisposed:return
@@ -3383,7 +3415,8 @@ class PetHost:
             if not self.assistant_settings.get(kind, True):return
             current = self.last_payload or {}
             current_thread = str(current.get("threadId") or current.get("title") or "current")
-            mismatch = current_thread != event.get("thread") or current.get("state") != kind
+            event_agent = normalize_agent(event.get("agent") or selected_agent(self))
+            mismatch = event_agent != selected_agent(self) or current_thread != event.get("thread") or current.get("state") != kind
             quiet = bool(getattr(getattr(self, 'quiet_state', None), 'active', False))
             hidden = not self.pet_is_visible()
             dnd = bool(buddy is not None and buddy.dnd_active())
@@ -3394,6 +3427,7 @@ class PetHost:
                         kind,
                         title=event.get("title") or "",
                         source=source,
+                        agent=event_agent,
                         show_title=bool(self.assistant_settings.get("showTitle", True)),
                     )
                     self._buddy_error_shown = False
@@ -3402,6 +3436,7 @@ class PetHost:
             self.update_buddy_badge()
             if source != 'live':return
         text = "任务已完成，可以回来查看。" if kind == "done" else "Agent 正在等待你确认或回复。" if kind == "waiting" else "提醒功能可以正常显示。"
+        if kind != "test":text = agent_name(event_agent) + " · " + text
         if self.assistant_settings.get("showTitle", True) and event.get("title"):
             text = event["title"] + "\n" + text
         self.post({"t": "say", "text": text, "duration": 8000, "reminder": True})
@@ -3427,9 +3462,7 @@ class PetHost:
         self.form.Show()
         self.form.Activate()
         if getattr(self, 'pending_buddy_summary', "") and not self.quiet_state.active and not self.buddy.dnd_active():
-            text = self.pending_buddy_summary
-            self.pending_buddy_summary = ""
-            self.post({"t": "say", "text": text, "duration": 9000, "reminder": True})
+            self.show_buddy_summary(self.pending_buddy_summary)
         self.update_buddy_badge()
         log("桌宠已从系统托盘恢复")
 
@@ -3966,7 +3999,8 @@ class PetHost:
         items: list[dict] = []
         try:
             with open(os.path.join(WEB, "model", "settings.json"), encoding="utf-8") as fh:
-                groups = (json.load(fh).get("FileReferences") or {}).get("Motions") or {}
+                refs = json.load(fh).get("FileReferences") or {}
+                groups = refs.get("Motions") or {}
             for group, motions in groups.items():
                 for index, motion in enumerate(motions or []):
                     rel = motion.get("File") or ""
@@ -4006,7 +4040,8 @@ class PetHost:
         ids: set[str] = set()
         try:
             with open(os.path.join(WEB, "model", "settings.json"), encoding="utf-8") as fh:
-                groups = (json.load(fh).get("FileReferences") or {}).get("Motions") or {}
+                refs = json.load(fh).get("FileReferences") or {}
+                groups = refs.get("Motions") or {}
             for motions in groups.values():
                 for motion in motions or []:
                     rel = (motion.get("File") or "").replace("/", os.sep)
@@ -4020,9 +4055,11 @@ class PetHost:
                         continue
             names = {}
             try:
-                with open(os.path.join(WEB, "model", "settings.json"), encoding="utf-8") as settings_fh:
-                    display_info = (json.load(settings_fh).get("FileReferences") or {}).get("DisplayInfo") or "display.cdi3.json"
-                with open(os.path.join(WEB, "model", display_info), encoding="utf-8") as fh:
+                display = refs.get("DisplayInfo") or ""
+                model_root = __import__('pathlib').Path(WEB)/'model'
+                display_file = (model_root/display).resolve()
+                if not display or not display_file.is_relative_to(model_root.resolve()):raise ValueError('Missing model display info')
+                with open(display_file, encoding="utf-8") as fh:
                     for item in json.load(fh).get("Parameters") or []:
                         names[item.get("Id")] = item.get("Name") or ""
             except Exception:
@@ -4166,6 +4203,8 @@ class PetHost:
             except Exception as exc:  # noqa: BLE001
                 log("保存设置窗口大小失败：%r" % (exc,))
 
+        from pet_settings_chrome import SettingsChrome
+        self.settings_chrome = SettingsChrome(self, form, webview, remember_geometry)
         form.ResizeEnd += remember_geometry
         form.FormClosing += remember_geometry
         form.FormClosed += self.on_settings_closed
@@ -4199,6 +4238,9 @@ class PetHost:
         log("设置窗口 WebView2 就绪，正在加载界面")
 
     def on_settings_message(self, sender, args) -> None:
+        chrome = getattr(self, "settings_chrome", None)
+        if chrome is not None and chrome.handle(args):
+            return
         try:
             msg = json.loads(args.WebMessageAsJson)
         except Exception:
@@ -4237,7 +4279,8 @@ class PetHost:
             "expressionTotal": len(self.expression_names()),
         }
         payload["logPath"] = log_path
-        payload["home"] = HERE
+        payload["home"] = DATA
+        payload["availableAppearances"] = ["legacy"] + (["dragon"] if os.path.isfile(os.path.join(WEB,"appearances","dragon-live","dragon.model3.json")) else [])
         payload["autostart"] = os.path.exists(startup_link_path())
         # 注意：这个函数会被界面线程直接调用（滚动缩放、页面就绪…），
         # 所以**只能读缓存**，不能在这里同步跑 tasklist / PowerShell。
@@ -4351,7 +4394,7 @@ class PetHost:
 
         def work() -> None:
             total = 0
-            root = os.path.join(HERE, ".webview2")
+            root = str(cache_dir())
             try:
                 for base, _dirs, files in os.walk(root):
                     for name in files:
@@ -4375,7 +4418,7 @@ class PetHost:
 
     def clear_webview_cache(self) -> None:
         """清 WebView2 缓存：写请求文件，让 pet-launcher 在旧进程退出后删掉再重启。"""
-        flag = os.path.join(HERE, "clear-cache.request")
+        flag = os.path.join(DATA, "clear-cache.request")
         try:
             with open(flag, "w", encoding="utf-8") as fh:
                 fh.write(str(os.getpid()))
@@ -4389,7 +4432,7 @@ class PetHost:
             creation = 0x08000000      # CREATE_NO_WINDOW
             subprocess.Popen(
                 ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                 "-WindowStyle", "Hidden", "-File", os.path.join(HERE, "pet-launcher.ps1")],
+                 "-WindowStyle", "Hidden", "-File", os.path.join(HERE, "pet-launcher.ps1"), "-DataDir", DATA, "-PythonExe", sys.executable],
                 cwd=HERE,
                 creationflags=creation,
                 stdin=subprocess.DEVNULL,
@@ -4404,66 +4447,21 @@ class PetHost:
         self.form.BeginInvoke(Action(self.form.Close))
 
     def create_desktop_link(self) -> bool:
-        """在桌面创建「Agent 桌宠」快捷方式（设置页按钮；属性和 launcher 首次创建一致）。"""
-        link = desktop_link_path()
-        icon = os.path.join(HERE, "web", "icon-transparent.ico")
-        if not os.path.exists(icon):
-            icon = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "shell32.dll")
-        ps_exe = os.path.join(
-            os.environ.get("SystemRoot", r"C:\Windows"),
-            "System32", "WindowsPowerShell", "v1.0", "powershell.exe",
-        )
-        launcher = os.path.join(HERE, "pet-launcher.ps1")
-        ps = (
-            "$ws = New-Object -ComObject WScript.Shell; "
-            "$l = $ws.CreateShortcut('{dst}'); "
-            "$l.TargetPath = '{exe}'; "
-            "$l.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{launcher}\"'; "
-            "$l.WorkingDirectory = '{here}'; "
-            "$l.IconLocation = '{icon},0'; "
-            "$l.Description = 'Agent 桌宠：Live2D 形象跟着接入的 Agent 实时状态变化'; "
-            "$l.Save()"
-        ).format(dst=link, exe=ps_exe, launcher=launcher, here=HERE, icon=icon)
-        try:
-            import subprocess
-
-            subprocess.run(
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
-                cwd=HERE,
-                creationflags=0x08000000,
-                timeout=25,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception as exc:      # noqa: BLE001
-            log("创建桌面快捷方式失败：%r" % (exc,))
-            self.push_settings()
-            return False
-        ok = os.path.exists(link)
-        if ok:
-            self._mark_desktop_link_done()
-            log("已创建桌面快捷方式：Agent 桌宠")
-        else:
-            log("创建桌面快捷方式失败（请查看日志）")
+        import subprocess
+        result=subprocess.run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',os.path.join(HERE,'pet-launcher.ps1'),'-DataDir',DATA,'-PythonExe',sys.executable,'-CreateDesktop'],cwd=HERE,creationflags=0x08000000,timeout=30)
+        ok=result.returncode==0 and os.path.exists(desktop_link_path())
+        if ok:self._mark_desktop_link_done()
         self.push_settings()
         return ok
 
     def remove_desktop_link(self) -> None:
-        """删掉桌面快捷方式，并保留 desktop-link.done：以后不会再自动重建。"""
-        link = desktop_link_path()
-        try:
-            if os.path.exists(link):
-                os.remove(link)
-        except OSError as exc:
-            log("删除桌面快捷方式失败：%r" % (exc,))
-        self._mark_desktop_link_done()
-        log("已删除桌面快捷方式（设置里可随时重建）")
-        self.push_settings()
+        import subprocess
+        subprocess.run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',os.path.join(HERE,'pet-launcher.ps1'),'-DataDir',DATA,'-PythonExe',sys.executable,'-RemoveDesktop'],cwd=HERE,creationflags=0x08000000,timeout=30)
+        self._mark_desktop_link_done();self.push_settings()
 
     def _mark_desktop_link_done(self) -> None:
         try:
-            with open(os.path.join(HERE, "desktop-link.done"), "w", encoding="ascii") as fh:
+            with open(os.path.join(DATA, "desktop-link.done"), "w", encoding="ascii") as fh:
                 fh.write(time.strftime("%Y-%m-%d %H:%M:%S"))
         except OSError:
             pass
@@ -4502,6 +4500,9 @@ class PetHost:
                         started = time.time()
                         self._settings_post_started = started
                         self._settings_post_warned = False
+                        chrome = getattr(self, "settings_chrome", None)
+                        if chrome is not None and chrome.form is form and current.get("t") == "settings":
+                            chrome.set_theme((current.get("data") or {}).get("settingsTheme"))
                         core.PostWebMessageAsJson(json.dumps(current, ensure_ascii=False))
                         self._settings_post_started = 0.0
                         spent = time.time() - started
@@ -4655,7 +4656,7 @@ class PetHost:
         elif name == "open-log":
             os.startfile(log_path)  # noqa: S606
         elif name == "open-folder":
-            os.startfile(HERE)  # noqa: S606
+            os.startfile(DATA)  # noqa: S606
         elif name == "open-codex":
             self.focus_codex()
         elif name == "toggle-panel":
@@ -4693,26 +4694,8 @@ class PetHost:
         return (area.Left, area.Top, area.Right, area.Bottom)
 
     def toggle_autostart(self, enable: bool) -> None:
-        script = os.path.join(HERE, "pet-launcher.ps1")
-        flag = "-Install" if enable else "-Uninstall"
-        target = startup_link_path()
-        if enable and not os.path.exists(script):
-            log("找不到 pet-launcher.ps1，无法设置开机自启")
-            return
-        try:
-            import subprocess
-
-            creation = 0x08000000  # CREATE_NO_WINDOW
-            subprocess.run(
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, flag],
-                cwd=HERE,
-                creationflags=creation,
-                timeout=30,
-            )
-            done = os.path.exists(target) if enable else not os.path.exists(target)
-            log("开机自启已%s%s" % ("开启" if enable else "关闭", "" if done else "（未能确认，请查看 startup 文件夹）"))
-        except Exception as exc:  # noqa: BLE001
-            log("切换开机自启失败：%r" % (exc,))
+        import subprocess
+        subprocess.run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',os.path.join(HERE,'pet-launcher.ps1'),'-DataDir',DATA,'-PythonExe',sys.executable,'-Install' if enable else '-Uninstall'],cwd=HERE,creationflags=0x08000000,timeout=30)
         self.push_settings()
 
     def run_selftest(self) -> None:
@@ -4816,13 +4799,22 @@ def main() -> int:
     parser.add_argument("--state-only", action="store_true", help="只打印状态，不开窗口")
     parser.add_argument("--agent", default="", help="配合 --state-only：读哪个 agent（默认用设置里的）")
     parser.add_argument("--shot", default="", help="把形象画布导出成 PNG（自检用）")
-    parser.add_argument("--show-tools", action="store_true", help="本次启动时展开常用工具窗口")
+    parser.add_argument("--show-tools", action="store_true", help="本次启动时直接打开工具中心")
     parser.add_argument("--show-banner", action="store_true", help="本次启动时展开快捷工具栏")
     parser.add_argument("--show-settings", action="store_true", help="本次启动时展开设置窗口")
     parser.add_argument("--show-inbox", action="store_true", help="本次启动时展开提醒收件箱")
     parser.add_argument("--show-metrics", action="store_true", help="本次启动时展开额度浮窗")
-    parser.add_argument("--show-companion", action="store_true", help="本次启动时展开游戏安静模式设置")
+    parser.add_argument("--show-companion", action="store_true", help="本次启动时展开勿扰与游戏安静设置")
+    parser.add_argument('--check',action='store_true',help='只读检查资源与依赖，不读取 Agent 或启动窗口')
+    parser.add_argument('--paths',action='store_true',help='只显示当前数据目录')
     args = parser.parse_args()
+    if args.paths:
+        print(json.dumps({'source':HERE,'data':DATA,'cache':str(cache_dir())},ensure_ascii=False));return 0
+    from setup_check import check
+    problems=check()
+    if args.check or (problems and not args.state_only):
+        print('检查通过' if not problems else '启动前请完成配置：\n- '+'\n- '.join(problems))
+        return 2 if problems else 0
 
     if args.state_only:
         import agent_state
@@ -4831,12 +4823,7 @@ def main() -> int:
         print(json.dumps(agent_state.snapshot(agent_id), ensure_ascii=False, indent=2))
         return 0
 
-    from setup_check import check
-    problems = check()
-    if problems:
-        print("启动前请完成配置：\n- " + "\n- ".join(problems), flush=True)
-        return 2
-
+    data_dir(create=True)
     if not single_instance():
         print("Agent 桌宠已经在运行了", flush=True)
         return 0

@@ -17,7 +17,7 @@ body {
   height: 100%;
   background: transparent;
   overflow: hidden;
-  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: "YouYuan", "幼圆", "Yuanti SC", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
   color: var(--ink);
   cursor: default;
   user-select: none;
@@ -214,6 +214,9 @@ canvas {
   letter-spacing: 0.3px;
   white-space: nowrap;
 }
+
+.chip.dragon-status { line-height: 20px; }
+.toast.dragon-status { max-width: calc(100% - 24px); white-space: normal; overflow-wrap: anywhere; overflow-y: auto; text-align: center; }
 
 .chip-dot,
 .state-dot {

@@ -1,0 +1,31 @@
+/* Shared, theme-aware hierarchy for the existing console and settings pages. */
+.advanced-options,.settings-disclosure,.inbox-management{min-width:0}
+.advanced-options{margin:12px 0;border-top:1px solid var(--line,var(--border,rgba(40,65,52,.12)));padding-top:10px}
+.advanced-options>summary,.settings-disclosure>summary,.inbox-management>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap;line-height:1.6;color:inherit}
+:is(.advanced-options,.settings-disclosure,.inbox-management)>summary::-webkit-details-marker{display:none}
+:is(.advanced-options,.settings-disclosure,.inbox-management)>summary::before{content:'›';display:inline-block;flex:none;font-size:18px;color:var(--muted,#78847c);transform:rotate(0deg)}
+:is(.advanced-options,.settings-disclosure,.inbox-management)[open]>summary::before{transform:rotate(90deg)}
+:is(.advanced-options,.settings-disclosure,.inbox-management)>summary:focus-visible{outline:2px solid var(--focus,#70a88e);outline-offset:4px;border-radius:6px}
+.settings-disclosure>summary{font-size:14px;font-weight:600}
+.settings-disclosure>summary>small{flex-basis:100%;font-size:11px;font-weight:400;color:var(--muted,#78847c);margin-left:17px}
+.disclosure-body{padding-top:12px;min-width:0}
+.disclosure-body>.card-head{margin-bottom:8px}
+.advanced-options>summary{font-size:12px;font-weight:500;color:var(--muted,#78847c)}
+.advanced-options[open]>.row-actions,.advanced-options[open]>.game-meta{margin-top:12px}
+.advanced-options .goal-rule,.advanced-options .goal-stats{margin-top:8px;overflow-wrap:anywhere}
+.companion-note{display:flex;gap:10px;align-items:flex-start;padding:13px 14px;border:1px solid var(--line,rgba(40,65,52,.12));border-radius:14px;background:var(--card,#fff);margin-bottom:12px}
+.companion-note>div{min-width:0}
+.companion-note strong{font-size:12px;font-weight:600}
+.companion-note p{font-size:12px;line-height:1.7;overflow-wrap:anywhere;color:var(--muted,#78847c);margin:5px 0 0}
+.inbox-management>summary{font-size:12px;color:var(--muted,#78847c);padding:5px 8px}
+.inbox-management[open]>div{margin-top:8px;padding:8px;border:1px solid var(--line,rgba(40,65,52,.12));border-radius:10px;background:var(--card,#fff)}
+.view-head h2{font-size:20px;line-height:1.35}
+.view-head .eyebrow{display:none}
+.view-head .view-sub{margin-top:5px;line-height:1.65}
+.game-head>.row-copy{min-width:0}
+.game-card>.tiny-chip{margin-top:10px}
+.setting-row>.row-copy{min-width:0}
+.appearance-preview{gap:12px;padding:10px 12px}
+.appearance-preview img{width:80px;height:78px}
+@media(max-height:520px){.view-head{margin-bottom:14px}.view-head h2{font-size:18px}.companion-note{padding:10px 12px}}
+@media(prefers-reduced-motion:reduce){summary::before{transition:none}}

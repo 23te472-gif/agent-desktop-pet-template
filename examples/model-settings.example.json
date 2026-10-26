@@ -1,0 +1,8 @@
+{
+  "Version": 3,
+  "FileReferences": {
+    "Moc": "your-model.moc3",
+    "Textures": ["textures/texture_00.png"]
+  },
+  "Groups": []
+}

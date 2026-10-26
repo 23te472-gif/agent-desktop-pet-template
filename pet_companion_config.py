@@ -3,7 +3,7 @@ from pathlib import Path
 import base64,ctypes,json,os,tempfile
 from ctypes import wintypes
 
-DEFAULTS=dict(quietEnabled=True,metricMode='off',gameRoots=[],keyCipher='')
+DEFAULTS=dict(quietEnabled=False,metricMode='off',gameRoots=[],keyCipher='')
 
 def validate(value):
     if not isinstance(value,dict) or type(value.get('quietEnabled')) is not bool or value.get('metricMode') not in ('codex','deepseek','off'):raise ValueError('安静模式或额度设置格式错误')

@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import os
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SETTINGS_FILE = os.path.join(HERE, "pet_settings.json")
+from pet_paths import data_dir
+SETTINGS_FILE = str(data_dir()/"pet_settings.json")
 
 DEFAULT_EXPRESSIONS = {
     "thinking": "呆呆眼",
@@ -62,6 +62,8 @@ def clean_bottom_actions(mode: str, value) -> dict:
 
 
 DEFAULTS = {
+    "petAppearance": "legacy",  # 保留旧 Live2D，可切换白发龙娘 PNG 形象
+    "settingsTheme": "paper",  # 设置页配色：暖白绿 / 冷白蓝
     "agent": "codex",        # 接入的 Agent（见 agent_state.py 的注册表）：卡片/表情跟着它走
     "scale": 1.0,
     "opacity": 1.0,
@@ -114,6 +116,10 @@ def load() -> dict:
                 merged = dict(DEFAULT_EXPRESSIONS)
                 merged.update({k: v for k, v in value.items() if isinstance(v, str)})
                 data["expressions"] = merged
+            elif key == "petAppearance":
+                data[key] = value if isinstance(value, str) and value in ("legacy", "dragon") else "legacy"
+            elif key == "settingsTheme":
+                data[key] = value if isinstance(value, str) and value in ("paper", "ice") else "paper"
             elif key == "bottomButtonsMode":
                 data[key] = value if value in DEFAULT_BOTTOM_ACTIONS else "assistant"
             elif key == "bottomButtonActions":
@@ -134,6 +140,7 @@ def load() -> dict:
 
 
 def save(data: dict) -> dict:
+    os.makedirs(os.path.dirname(SETTINGS_FILE),exist_ok=True)
     clean = dict(DEFAULTS)
     clean["expressions"] = dict(DEFAULT_EXPRESSIONS)
     if isinstance(data, dict):
@@ -142,6 +149,10 @@ def save(data: dict) -> dict:
                 merged = dict(DEFAULT_EXPRESSIONS)
                 merged.update({k: v for k, v in value.items() if isinstance(v, str)})
                 clean["expressions"] = merged
+            elif key == "petAppearance":
+                clean[key] = value if isinstance(value, str) and value in ("legacy", "dragon") else "legacy"
+            elif key == "settingsTheme":
+                clean[key] = value if isinstance(value, str) and value in ("paper", "ice") else "paper"
             elif key == "bottomButtonsMode":
                 clean[key] = value if value in DEFAULT_BOTTOM_ACTIONS else "assistant"
             elif key == "bottomButtonActions":

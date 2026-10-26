@@ -22,7 +22,8 @@ body {
   height: 100%;
   background: transparent;     /* 让 Windows 亚克力（毛玻璃）透上来 */
   overflow: hidden;
-  font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Segoe UI Variable", system-ui, sans-serif;
+  font-family: "YouYuan", "幼圆", "Yuanti SC", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  font-weight: 600;
   color: var(--ink);
   user-select: none;
   cursor: default;
@@ -129,7 +130,7 @@ body.compact .card-title {
 .card-row .v {
   min-width: 0;
   color: #2c4f44;
-  font-weight: 500;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   overflow: hidden;

@@ -16,7 +16,7 @@ def is_game_path(path,roots):
     return False
 
 def steam_roots(extra=()):
-    candidates=[Path('C:/Program Files (x86)/Steam'),Path('C:/Program Files/Steam'),Path('D:/Steam'),Path('D:/SteamLibrary')]
+    candidates=[Path(os.environ[key])/'Steam' for key in ('ProgramFiles(x86)','ProgramFiles') if os.environ.get(key)]
     try:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER,r'Software\Valve\Steam') as key:candidates.insert(0,Path(winreg.QueryValueEx(key,'SteamPath')[0]))
